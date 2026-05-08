@@ -971,6 +971,16 @@
           <label>Scholarship Note</label>
           <input type="text" id="new-scholar-note" placeholder="e.g. Church bursary, NGO grant"/>
         </div>
+        <div style="display:flex;flex-direction:column;gap:.6rem;justify-content:flex-end;padding-bottom:.2rem">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="new-corm-kid" style="width:16px;height:16px;accent-color:var(--green)"/>
+            CORM Kid <small style="font-weight:400;text-transform:none">(zero fees)</small>
+          </label>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="new-full-sponsor" style="width:16px;height:16px;accent-color:var(--green)"/>
+            Fully Sponsored <small style="font-weight:400;text-transform:none">(no tuition, other fees apply)</small>
+          </label>
+        </div>
       </div>
 
       <!-- Fee entry per term -->
@@ -1943,14 +1953,16 @@ function addStudent() {
   });
 
   const familyId    = document.getElementById('new-family-id').value.trim();
-  const studentType = document.getElementById('new-type').value || 'day';
-  const scholarship = parseFloat(document.getElementById('new-scholarship').value) || 0;
-  const scholarNote = document.getElementById('new-scholar-note').value.trim();
+  const studentType  = document.getElementById('new-type').value || 'day';
+  const scholarship  = parseFloat(document.getElementById('new-scholarship').value) || 0;
+  const scholarNote  = document.getElementById('new-scholar-note').value.trim();
+  const cormKid      = document.getElementById('new-corm-kid')?.checked || false;
+  const fullSponsor  = document.getElementById('new-full-sponsor')?.checked || false;
   students.push({ id: sid, name, grade,
     guardian, guardianRel, phone,
     guardian2, guardian2Rel, phone2,
     familyId, studentType,
-    scholarship, scholarNote, fees,
+    scholarship, scholarNote, cormKid, fullSponsor, fees,
     discounts: { advancePct: 0, familyPct: 0 },
     paymentLog: [],
     arrears: {},
@@ -1967,6 +1979,7 @@ function autoID() {
 }
 
 function clearForm() {
+  ['new-corm-kid','new-full-sponsor'].forEach(id => { const cb = document.getElementById(id); if (cb) cb.checked = false; });
   ['new-name','new-id','new-guardian','new-phone','new-guardian2','new-phone2','new-family-id','new-scholarship','new-scholar-note'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -1980,6 +1993,31 @@ function clearForm() {
 // ─────────────────────────────────────────────
 // Owing-only filter state
 let showOwingOnly = false;
+
+
+function toggleCormKid(studentId) {
+  const s = students.find(x => x.id === studentId);
+  if (!s) return;
+  s.cormKid = document.getElementById('corm-' + studentId)?.checked || false;
+  // CORM kids can't also be fully sponsored — clear if both checked
+  if (s.cormKid) { s.fullSponsor = false; const el = document.getElementById('sponsor-' + studentId); if (el) el.checked = false; }
+  save();
+  renderDetail(studentId);
+  renderDashboard();
+  toast(s.cormKid ? '✅ Marked as CORM Kid — all fees waived.' : '✅ CORM Kid status removed.');
+}
+
+function toggleFullSponsor(studentId) {
+  const s = students.find(x => x.id === studentId);
+  if (!s) return;
+  s.fullSponsor = document.getElementById('sponsor-' + studentId)?.checked || false;
+  // Can't be fully sponsored and CORM kid at same time
+  if (s.fullSponsor) { s.cormKid = false; const el = document.getElementById('corm-' + studentId); if (el) el.checked = false; }
+  save();
+  renderDetail(studentId);
+  renderDashboard();
+  toast(s.fullSponsor ? '✅ Marked as Fully Sponsored — tuition waived.' : '✅ Full sponsorship removed.');
+}
 
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
@@ -2046,12 +2084,19 @@ function termTotals(student, term) {
   const totalDiscPct = Math.min(100, (disc.advancePct || 0) + (disc.familyPct || 0));
   const discFactor = 1 - (totalDiscPct / 100);
 
+  // CORM Kid → zero fees on everything
+  if (student.cormKid) {
+    return { billed: 0, paid: 0, discAmt: 0, totalDiscPct: 0, scholarship: 0, arrears: 0 };
+  }
+
   // Standard fee categories (discounts apply)
   // NOTE: Firebase drops keys with value 0, so we must also check the fee schedule
   let rawBilled = 0, effBilled = 0, paid = 0;
   const gradeSched = (feeSchedule[student.grade] || DEFAULT_FEE_SCHEDULE[student.grade] || {})[term] || {};
   FEE_CATS.forEach(cat => {
     if (cat.jhsOnly && !student.grade.startsWith('JHS')) return;
+    // Fully sponsored → tuition is waived (billed as 0)
+    if (student.fullSponsor && cat.key === 'tuition') return;
     const f = tf[cat.key];
     // billed: use stored value, fall back to fee schedule, fall back to 0
     const billed = (f && f.billed != null) ? f.billed : (gradeSched[cat.key] || 0);
@@ -2139,7 +2184,8 @@ function renderDetail(id) {
       ${(disc.advancePct||0)>0 ? `<span class="discount-badge" style="margin-left:.6rem">⚡ ${disc.advancePct}% Early Pay</span>` : ''}
       ${(disc.familyPct||0)>0  ? `<span class="discount-badge family" style="margin-left:.4rem">👨‍👩‍👧 ${disc.familyPct}% Family</span>` : ''}
       ${(s.scholarship||0)>0   ? `<span class="discount-badge scholar-badge" style="margin-left:.4rem">🎓 GH₵${s.scholarship} Scholarship</span>` : ''}
-      
+      ${s.cormKid     ? `<span class="discount-badge" style="margin-left:.4rem;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7">🏠 CORM Kid</span>` : ''}
+      ${s.fullSponsor ? `<span class="discount-badge" style="margin-left:.4rem;background:#fff8e1;color:#f57f17;border:1px solid #ffe082">✨ Fully Sponsored</span>` : ''}
     </h2>
     <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:.86rem;color:var(--gray-3);margin-bottom:1.2rem">
       <span><strong>Grade:</strong> ${s.grade}</span>
@@ -2151,7 +2197,19 @@ function renderDetail(id) {
 
     <!-- DISCOUNT PANEL -->
     <div class="discount-panel no-print">
-      <h3>🏷️ Discounts for ${s.name}</h3>
+      <h3>🏷️ Discounts & Sponsorship for ${s.name}</h3>
+      <div style="display:flex;gap:1.6rem;flex-wrap:wrap;margin-bottom:1rem;padding:.8rem;background:var(--gray-1);border-radius:8px">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:600">
+          <input type="checkbox" id="corm-${id}" ${s.cormKid?'checked':''} onchange="toggleCormKid('${id}')"
+            style="width:16px;height:16px;accent-color:var(--green)"/>
+          🏠 CORM Kid <span style="font-weight:400;color:var(--gray-3)">(zero fees)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:600">
+          <input type="checkbox" id="sponsor-${id}" ${s.fullSponsor?'checked':''} onchange="toggleFullSponsor('${id}')"
+            style="width:16px;height:16px;accent-color:#f57f17"/>
+          ✨ Fully Sponsored <span style="font-weight:400;color:var(--gray-3)">(no tuition, other fees apply)</span>
+        </label>
+      </div>
       <div class="discount-row">
         <div>
           <label>⚡ Early Payment Discount (%)</label>
@@ -2290,6 +2348,9 @@ function renderDetail(id) {
 
     FEE_CATS.forEach(cat => {
       if (cat.jhsOnly && !isJHS) return;
+      // CORM Kids pay nothing; fully sponsored skip tuition
+      if (s.cormKid) return;
+      if (s.fullSponsor && cat.key === 'tuition') return;
       const rawF = (s.fees[term] && s.fees[term][cat.key]);
       const gradeSched2 = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
       const catBilled = (rawF && rawF.billed != null) ? rawF.billed : (gradeSched2[cat.key] || 0);
