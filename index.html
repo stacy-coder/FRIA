@@ -1964,7 +1964,7 @@ function renderStudentList() {
     const lbl = balance > 0 ? `GH₵ ${balance.toFixed(2)} owing` : '✔ Fully Paid';
     return `<div class="student-card" onclick="openDetail('${s.id}')">
       <div class="s-name">${s.name}</div>
-      <div class="s-meta">${s.grade} &nbsp;·&nbsp; ID: ${s.id}${s.studentType==='boarding'?' &nbsp;·&nbsp; 🏠 Boarding':''}</div>
+      <div class="s-meta">${s.grade} &nbsp;·&nbsp; ID: ${s.id}</div>
       <span class="s-balance ${cls}">${lbl}</span>
     </div>`;
   }).join('');
@@ -2057,7 +2057,7 @@ function renderDetail(id) {
       ${(disc.advancePct||0)>0 ? `<span class="discount-badge" style="margin-left:.6rem">⚡ ${disc.advancePct}% Early Pay</span>` : ''}
       ${(disc.familyPct||0)>0  ? `<span class="discount-badge family" style="margin-left:.4rem">👨‍👩‍👧 ${disc.familyPct}% Family</span>` : ''}
       ${(s.scholarship||0)>0   ? `<span class="discount-badge scholar-badge" style="margin-left:.4rem">🎓 GH₵${s.scholarship} Scholarship</span>` : ''}
-      ${s.studentType==='boarding' ? `<span class="discount-badge boarding-badge" style="margin-left:.4rem">🏠 Boarding</span>` : ''}
+      
     </h2>
     <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:.86rem;color:var(--gray-3);margin-bottom:1.2rem">
       <span><strong>Grade:</strong> ${s.grade}</span>
@@ -3280,7 +3280,7 @@ let importParsed = [];    // processed + validated rows ready for preview
 
 // ── Download a blank template ──
 function downloadTemplate() {
-  const headers = ['Full Name','Grade','Guardian Name','Guardian Relationship','Guardian Phone','2nd Guardian Name','2nd Guardian Relationship','2nd Guardian Phone','Student ID','Student Type','Family ID','Scholarship Amount','Scholarship Note'];
+  const headers = ['Full Name','Grade','Guardian Name','Guardian Relationship','Guardian Phone','2nd Guardian Name','2nd Guardian Relationship','2nd Guardian Phone','Student ID','Family ID','Scholarship Amount','Scholarship Note'];
   const example = [
     ['Abena Mensah','Class 3','Kofi Mensah','Father','0241234567','Ama Mensah','Mother','0241234568','FRI-2025-001','day','FAM-Mensah','0',''],
     ['Kwame Asante','JHS Form 1','Ama Asante','Mother','0551234567','','','','','day','','50','Church bursary'],
@@ -3383,7 +3383,7 @@ function showColumnMapper() {
     { key: 'guardian2Rel', label: '2nd Guardian Relationship',required: false },
     { key: 'phone2',       label: '2nd Guardian Phone',       required: false },
     { key: 'id',          label: 'Student ID',          required: false },
-    { key: 'studentType', label: 'Student Type (day/boarding)', required: false },
+    // studentType removed — all students are day students
     { key: 'familyId',    label: 'Family ID',           required: false },
     { key: 'scholarship', label: 'Scholarship Amount',  required: false },
     { key: 'scholarNote', label: 'Scholarship Note',    required: false },
@@ -3445,7 +3445,7 @@ function runPreview() {
     const guardian2Rel = get(getCol('guardian2Rel'));
     const phone2       = get(getCol('phone2'));
     const id          = get(getCol('id'));
-    const studentType = get(getCol('studentType')).toLowerCase() === 'boarding' ? 'boarding' : 'day';
+    const studentType = 'day'; // all students are day students
     const familyId    = get(getCol('familyId'));
     const scholarship = parseFloat(get(getCol('scholarship'))) || 0;
     const scholarNote = get(getCol('scholarNote'));
@@ -3489,7 +3489,7 @@ function runPreview() {
       <td>${r.guardian||'—'}</td>
       <td>${r.phone||'—'}</td>
       <td>${r.id||'(auto)'}</td>
-      <td>${r.studentType}</td>
+
       <td>${r.familyId||'—'}</td>
       <td style="font-size:.76rem;color:var(--gray-3)">${r.status==='ok'?'✔ Ready':r.note}</td>
     </tr>`;
