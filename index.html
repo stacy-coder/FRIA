@@ -1654,14 +1654,48 @@ const TERMS = ['Term 1', 'Term 2', 'Term 3'];
 
 // Fee categories: label + key + JHS-only flag
 let FEE_CATS = [
-  { label: 'School Fees (Tuition)',   key: 'tuition',    jhsOnly: false },
-  { label: 'PTA Levy',               key: 'pta',        jhsOnly: false },
-  { label: 'Uniform / Dress',        key: 'uniform',    jhsOnly: false },
-  { label: 'Books & Stationery',     key: 'books',      jhsOnly: false },
-  { label: 'Examination Fees',       key: 'exam',       jhsOnly: false },
-  { label: 'Computer / ICT Levy',    key: 'ict',        jhsOnly: false },
-  { label: 'BECE Registration',      key: 'bece',       jhsOnly: true  },
+  { label: 'School Tuition',     key: 'tuition',       restrict: 'none', jhsOnly: false },
+  { label: 'Photocopy Fee',      key: 'photocopy',     restrict: 'none', jhsOnly: false },
+  { label: 'Creative Arts Fee',  key: 'creative_arts', restrict: 'none', jhsOnly: false },
+  { label: 'Exams Fee',          key: 'exam',          restrict: 'none', jhsOnly: false },
+  { label: 'Computer Use Fee',   key: 'ict',           restrict: 'none', jhsOnly: false },
+  { label: 'Book Use Fee',       key: 'books',         restrict: 'none', jhsOnly: false },
+  { label: 'Toiletries',         key: 'toiletries',    restrict: 'none', jhsOnly: false },
+  { label: 'Event Dues',         key: 'event_dues',    restrict: 'none', jhsOnly: false },
+  { label: 'P.T.A. Dues',        key: 'pta',           restrict: 'none', jhsOnly: false },
+  { label: 'Science Practicals', key: 'science',       restrict: 'none', jhsOnly: false },
+  { label: 'Graduation Fee',     key: 'graduation',    restrict: 'jhs',  jhsOnly: true  },
+  { label: 'Mock Fee',           key: 'mock',          restrict: 'jhs',  jhsOnly: true  },
 ];
+
+// ── Pre-loaded fee schedule from 2025-2026 Term 3 fee sheet ──
+// Structure: feeSchedule[grade][term][categoryKey] = amount
+// All 3 terms are pre-loaded with the same Term 3 amounts.
+// Admin can update individual terms in Settings → Term Fee Schedule.
+const DEFAULT_FEE_SCHEDULE = (function() {
+  const pre    = { tuition:580, photocopy:50, creative_arts:50, exam:30,  ict:0,  books:0,   toiletries:60, event_dues:20, pta:15, science:0,  graduation:0, mock:0  };
+  const lower  = { tuition:627, photocopy:30, creative_arts:35, exam:60,  ict:35, books:35,  toiletries:45, event_dues:25, pta:15, science:0,  graduation:0, mock:0  };
+  const upper  = { tuition:673, photocopy:35, creative_arts:35, exam:65,  ict:55, books:37,  toiletries:40, event_dues:25, pta:15, science:15, graduation:0, mock:0  };
+  const jhs12  = { tuition:867, photocopy:30, creative_arts:35, exam:65,  ict:55, books:100, toiletries:40, event_dues:28, pta:15, science:15, graduation:0, mock:0  };
+  const jhs3   = { tuition:302, photocopy:14, creative_arts:7,  exam:0,   ict:19, books:40,  toiletries:14, event_dues:9,  pta:5,  science:5,  graduation:35, mock:27 };
+
+  const gradeGroup = {
+    'Creche':'pre','Nursery 1':'pre','Nursery 2':'pre',
+    'KG 1':'lower','KG 2':'lower',
+    'Class 1':'lower','Class 2':'lower','Class 3':'lower',
+    'Class 4':'upper','Class 5':'upper','Class 6':'upper',
+    'JHS Form 1':'jhs12','JHS Form 2':'jhs12',
+    'JHS Form 3':'jhs3'
+  };
+  const amounts = { pre, lower, upper, jhs12, jhs3 };
+  const terms   = ['Term 1','Term 2','Term 3'];
+  const sched   = {};
+  Object.entries(gradeGroup).forEach(([grade, group]) => {
+    sched[grade] = {};
+    terms.forEach(term => { sched[grade][term] = Object.assign({}, amounts[group]); });
+  });
+  return sched;
+})();
 
 let students      = [];
 let activeTerm    = 'Term 1';
@@ -1675,7 +1709,7 @@ async function loadAllData() {
   const data = await dbGet('appData');
   if (data) {
     students    = data.students    ? Object.values(data.students)    : [];
-    feeSchedule = data.feeSchedule || {};
+    feeSchedule = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0) ? data.feeSchedule : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
     activeTerm  = data.activeTerm  || 'Term 1';
     storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
     storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
