@@ -2855,13 +2855,14 @@ function recordPayment(studentId, term, catKey) {
 
   // Log as one payment entry with breakdown
   if (!s.paymentLog) s.paymentLog = [];
-  genReceiptNoAsync().then(receiptNo => {
+
+  function doLog(receiptNo) {
     s.paymentLog.push({
       receiptNo,
       date: new Date().toISOString(),
       term,
       category: breakdown.length === 1 ? breakdown[0].label : 'Multiple Categories',
-      breakdown, // array of { key, label, amount }
+      breakdown,
       amount: totalApplied,
       method,
       momoRef: momoRef || ''
@@ -2873,7 +2874,11 @@ function recordPayment(studentId, term, catKey) {
     showReceipt(s, receiptNo, totalApplied, method, summaryLabel, term, momoRef);
     renderDetail(studentId);
     renderDashboard();
-  });
+  }
+
+  genReceiptNoAsync()
+    .then(receiptNo => doLog(receiptNo))
+    .catch(() => doLog(genReceiptNo()));
 }
 
 function deleteStudent(id) {
@@ -3813,11 +3818,16 @@ function deleteExtra(studentId, extraId) {
 // RECEIPT NUMBER GENERATOR
 // ─────────────────────────────────────────────
 async function genReceiptNoAsync() {
-  // Use Firebase transaction to get a safe incrementing number
-  const ref = dbRef('receiptSeq');
-  const result = await ref.transaction(cur => (cur || 0) + 1);
-  const n = result.snapshot.val();
-  return 'REC-' + new Date().getFullYear() + '-' + String(n).padStart(4,'0');
+  try {
+    const ref = dbRef('receiptSeq');
+    const result = await ref.transaction(cur => (cur || 0) + 1);
+    const n = result.snapshot.val();
+    if (!n) throw new Error('no value');
+    return 'REC-' + new Date().getFullYear() + '-' + String(n).padStart(4,'0');
+  } catch(e) {
+    // Fall back to timestamp-based receipt number
+    return genReceiptNo();
+  }
 }
 function genReceiptNo() {
   // Sync fallback using timestamp (used if async not available)
