@@ -2647,7 +2647,15 @@ function renderDashboard() {
   const owing = students
     .map(s => ({ ...s, bal: termTotals(s,term).billed - termTotals(s,term).paid }))
     .filter(s => s.bal > 0)
-    .sort((a,b) => b.bal - a.bal);
+    .sort((a,b) => {
+      const GRADE_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
+        'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
+        'JHS Form 1','JHS Form 2','JHS Form 3'];
+      const ai = GRADE_ORDER.indexOf(a.grade);
+      const bi = GRADE_ORDER.indexOf(b.grade);
+      if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      return a.name.localeCompare(b.name); // alphabetical within grade
+    });
 
   if (owing.length === 0) {
     document.getElementById('dash-outstanding').innerHTML = `<div class="empty"><div class="e-icon">🎉</div><p>All students are fully paid for ${term}!</p></div>`;
