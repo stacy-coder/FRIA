@@ -1097,6 +1097,28 @@
 
   <!-- ════════════ REPORTS ════════════ -->
   <div id="tab-reports" class="section">
+
+    <!-- ── DAILY PAYMENTS REPORT ── -->
+    <div class="card" id="daily-report-card">
+      <h2>💵 Daily Payments Report</h2>
+      <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1.2rem">
+        All payments received on a selected date, broken down by fee category — so the finance officer knows exactly how much cash to put in each envelope.
+      </p>
+      <div class="term-row" style="flex-wrap:wrap;gap:.8rem">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:.3rem">Date</label>
+          <input type="date" id="daily-report-date" onchange="renderDailyReport()"
+            style="padding:.5rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:.5rem">
+          <button class="btn btn-primary btn-sm" onclick="renderDailyReport()">🔍 Generate</button>
+          <button class="btn btn-export btn-sm" onclick="printDailyReport()">🖨️ Print</button>
+        </div>
+      </div>
+      <div id="daily-report-content" style="margin-top:1.2rem"></div>
+    </div>
+
+    <!-- ── SCHOOL-WIDE FEE REPORT ── -->
     <div class="card">
       <h2>📊 School-Wide Fee Report</h2>
       <div class="term-row">
@@ -1369,6 +1391,19 @@
       <div class="btn-row" style="margin-top:.8rem">
         <button class="btn btn-gold" id="fee-cats-add-btn" onclick="document.getElementById('fee-cats-add-form').style.display='';this.style.display='none'">➕ Add New Category</button>
       </div>
+    </div>
+
+    <!-- ── GRADE PROMOTION ── -->
+    <div class="card" id="promotion-card">
+      <h2>🎓 Grade Promotion <span class="role-badge role-admin" style="font-size:.7rem;vertical-align:middle">Admin Only</span></h2>
+      <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem">
+        Promotes all students to their next grade level. JHS Form 3 students are marked as Graduated.
+        This normally runs automatically on <strong>August 1st</strong> each year, but you can also trigger it manually here.
+        <br><br>
+        <strong>⚠️ This resets all fee records and sets the active term back to Term 1. Only run this at the start of a new academic year.</strong>
+      </p>
+      <div id="promotion-status" style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem"></div>
+      <button class="btn btn-gold" onclick="showPromotionPanel()">🎓 Run Grade Promotion</button>
     </div>
 
     <!-- ── RESET ── -->
@@ -1760,9 +1795,9 @@ function showTab(id) {
 
   closeDetail();
   if (id === 'students')  renderStudentList();
-  if (id === 'reports')   renderReport();
+  if (id === 'reports')   { renderReport(); initDailyReport(); }
   if (id === 'dashboard') renderDashboard();
-  if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); }
+  if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); }
   if (id === 'import')    resetImport();
   if (id === 'store')     initStore();
 }
@@ -1854,6 +1889,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await loadAllData();
           await loadFeeCats();
           hideLoading();
+          checkAndRunPromotion();
           document.getElementById('auth-screen').classList.add('hidden');
           renderDashboard();
 
@@ -2348,20 +2384,27 @@ function renderDetail(id) {
       ${log.length === 0
         ? `<p style="color:var(--gray-3);font-size:.84rem">No payments recorded yet.</p>`
         : `<table class="plog-table">
-            <thead><tr><th>Receipt #</th><th>Date</th><th>Term</th><th>Category</th><th>Amount</th><th>Method</th><th class="no-print"></th></tr></thead>
+            <thead><tr><th>Receipt #</th><th>Date</th><th>Term</th><th>Amount (GH₵)</th><th>Breakdown</th><th>Method</th><th class="no-print"></th></tr></thead>
             <tbody>
-              ${log.map(p => `<tr>
+              ${log.map(p => {
+                const breakdownHtml = p.breakdown && p.breakdown.length > 1
+                  ? '<div style="font-size:.78rem;line-height:1.7">' +
+                    p.breakdown.map(b => `<span style="display:flex;justify-content:space-between;gap:.8rem"><span>${b.label}</span><strong>GH₵${b.amount.toFixed(2)}</strong></span>`).join('') +
+                    '</div>'
+                  : p.category;
+                return `<tr>
                 <td><strong>${p.receiptNo}</strong></td>
                 <td>${new Date(p.date).toLocaleDateString('en-GH')}</td>
                 <td>${p.term}</td>
-                <td>${p.category}</td>
-                <td>GH₵ ${p.amount.toFixed(2)}</td>
+                <td style="font-weight:700">GH₵ ${p.amount.toFixed(2)}</td>
+                <td style="min-width:200px">${breakdownHtml}</td>
                 <td>
                   <span class="method-badge m-${p.method}">${p.method==='momo'?'📱 MoMo':p.method==='bank'?'🏦 Bank':'💵 Cash'}</span>
                   ${p.momoRef ? `<br><span class="momo-ref-val">Ref: ${p.momoRef}</span>` : ''}
                 </td>
                 <td class="no-print"><button class="btn btn-primary btn-sm" onclick="reShowReceipt('${id}','${p.receiptNo}')">🧾</button></td>
-              </tr>`).join('')}
+              </tr>`;
+              }).join('')}
             </tbody>
           </table>`}
     </div>
@@ -2487,41 +2530,78 @@ function closeDetail() {
   document.getElementById('list-view').style.display = '';
 }
 
+// Payment priority: all non-tuition categories first, tuition last
+function getPaymentOrder() {
+  const nonTuition = FEE_CATS.filter(c => c.key !== 'tuition');
+  const tuition    = FEE_CATS.filter(c => c.key === 'tuition');
+  return [...nonTuition, ...tuition];
+}
+
 function recordPayment(studentId, term, catKey) {
   const inputId   = `pay-${term.replace(' ','-')}-${catKey}-${studentId}`;
   const methodId  = `method-${term.replace(' ','-')}-${catKey}-${studentId}`;
   const momoRefId = `momorefval-${term.replace(' ','-')}-${catKey}-${studentId}`;
-  const amount    = parseFloat(document.getElementById(inputId)?.value) || 0;
+  let remaining   = parseFloat(document.getElementById(inputId)?.value) || 0;
   const method    = document.getElementById(methodId)?.value || 'cash';
   const momoRef   = method === 'momo' ? (document.getElementById(momoRefId)?.value.trim() || '') : '';
-  if (amount <= 0) return toast('⚠️ Enter a payment amount greater than 0.');
+  if (remaining <= 0) return toast('⚠️ Enter a payment amount greater than 0.');
   if (method === 'momo' && !momoRef) return toast('⚠️ Please enter the MoMo Transaction ID before saving.');
 
   const s = students.find(x => x.id === studentId);
   if (!s) return;
   if (!s.fees[term]) s.fees[term] = {};
-  if (!s.fees[term][catKey]) s.fees[term][catKey] = { billed: 0, paid: 0 };
 
   const disc = s.discounts || {};
   const totalDiscPct = Math.min(100, (disc.advancePct||0) + (disc.familyPct||0));
   const discFactor = 1 - (totalDiscPct / 100);
-  const effBilled = s.fees[term][catKey].billed * discFactor;
-  const prev = s.fees[term][catKey].paid;
-  s.fees[term][catKey].paid = Math.min(effBilled, prev + amount);
-  const actualAmount = s.fees[term][catKey].paid - prev;
+  const isJHS = s.grade.startsWith('JHS');
+  const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
 
-  // Log the payment
+  // Distribute payment across categories in priority order
+  const breakdown = []; // { category, amount } per cat that received payment
+  const payOrder = getPaymentOrder().filter(cat => {
+    if (cat.jhsOnly && !isJHS) return false;
+    return true;
+  });
+
+  payOrder.forEach(cat => {
+    if (remaining <= 0.005) return;
+    if (!s.fees[term][cat.key]) {
+      const billedAmt = gradeSched[cat.key] || 0;
+      s.fees[term][cat.key] = { billed: billedAmt, paid: 0 };
+    }
+    const effBilled = (s.fees[term][cat.key].billed || gradeSched[cat.key] || 0) * discFactor;
+    const alreadyPaid = s.fees[term][cat.key].paid || 0;
+    const catBalance = Math.max(0, effBilled - alreadyPaid);
+    if (catBalance <= 0.005) return;
+
+    const apply = Math.min(remaining, catBalance);
+    s.fees[term][cat.key].paid = alreadyPaid + apply;
+    remaining -= apply;
+    breakdown.push({ key: cat.key, label: cat.label, amount: apply });
+  });
+
+  const totalApplied = breakdown.reduce((sum, b) => sum + b.amount, 0);
+  if (totalApplied <= 0) return toast('⚠️ This student has no outstanding balance for this term.');
+
+  // Log as one payment entry with breakdown
   if (!s.paymentLog) s.paymentLog = [];
   genReceiptNoAsync().then(receiptNo => {
-    const catLabel = FEE_CATS.find(c => c.key === catKey)?.label || catKey;
-    if (!s.paymentLog) s.paymentLog = [];
     s.paymentLog.push({
-      receiptNo, date: new Date().toISOString(), term,
-      category: catLabel, amount: actualAmount, method,
+      receiptNo,
+      date: new Date().toISOString(),
+      term,
+      category: breakdown.length === 1 ? breakdown[0].label : 'Multiple Categories',
+      breakdown, // array of { key, label, amount }
+      amount: totalApplied,
+      method,
       momoRef: momoRef || ''
     });
     save();
-    showReceipt(s, receiptNo, actualAmount, method, catLabel, term, momoRef);
+    const summaryLabel = breakdown.length === 1
+      ? breakdown[0].label
+      : breakdown.map(b => `${b.label}: GH₵${b.amount.toFixed(2)}`).join(', ');
+    showReceipt(s, receiptNo, totalApplied, method, summaryLabel, term, momoRef);
     renderDetail(studentId);
     renderDashboard();
   });
@@ -2584,6 +2664,302 @@ function renderDashboard() {
 // ─────────────────────────────────────────────
 // 8. REPORTS
 // ─────────────────────────────────────────────
+
+// ── Daily Payments Report ─────────────────────────────────
+
+function renderDailyReport() {
+  const dateInput = document.getElementById('daily-report-date');
+  const container = document.getElementById('daily-report-content');
+  if (!dateInput || !container) return;
+
+  // Default to today if no date selected
+  if (!dateInput.value) {
+    dateInput.value = new Date().toISOString().slice(0, 10);
+  }
+  const selectedDate = dateInput.value; // YYYY-MM-DD
+
+  // Collect all payment log entries for this date
+  const entries = []; // { studentName, grade, receiptNo, term, category, key, amount, method, momoRef }
+  students.forEach(s => {
+    (s.paymentLog || []).forEach(p => {
+      const pDate = p.date ? p.date.slice(0, 10) : '';
+      if (pDate !== selectedDate) return;
+
+      if (p.breakdown && p.breakdown.length > 0) {
+        // New-style: distributed payment with breakdown
+        p.breakdown.forEach(b => {
+          entries.push({
+            studentName: s.name, grade: s.grade,
+            receiptNo: p.receiptNo, term: p.term,
+            category: b.label, key: b.key,
+            amount: b.amount, method: p.method,
+            momoRef: p.momoRef || ''
+          });
+        });
+      } else {
+        // Old-style: single category payment
+        entries.push({
+          studentName: s.name, grade: s.grade,
+          receiptNo: p.receiptNo, term: p.term,
+          category: p.category, key: null,
+          amount: p.amount, method: p.method,
+          momoRef: p.momoRef || ''
+        });
+      }
+    });
+  });
+
+  if (entries.length === 0) {
+    container.innerHTML = `<div class="empty"><div class="e-icon">📭</div><p>No payments recorded for ${selectedDate}.</p></div>`;
+    return;
+  }
+
+  // Total by category
+  const catTotals = {};
+  const methodTotals = { cash: 0, momo: 0, bank: 0 };
+  entries.forEach(e => {
+    const key = e.category;
+    catTotals[key] = (catTotals[key] || 0) + e.amount;
+    methodTotals[e.method] = (methodTotals[e.method] || 0) + e.amount;
+  });
+  const grandTotal = entries.reduce((s, e) => s + e.amount, 0);
+
+  // ── Envelope Summary ──
+  let summaryHtml = `
+    <div style="background:var(--green);color:#fff;border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:1.4rem">
+      <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.8;margin-bottom:.6rem">
+        📅 ${selectedDate} — Total Collected: GH₵ ${grandTotal.toFixed(2)}
+      </div>
+      <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.88rem">
+        <span>💵 Cash: <strong>GH₵ ${(methodTotals.cash||0).toFixed(2)}</strong></span>
+        <span>📱 MoMo: <strong>GH₵ ${(methodTotals.momo||0).toFixed(2)}</strong></span>
+        <span>🏦 Bank: <strong>GH₵ ${(methodTotals.bank||0).toFixed(2)}</strong></span>
+      </div>
+    </div>
+
+    <h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📬 Envelope Breakdown</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem;margin-bottom:1.4rem">`;
+
+  // Sort categories by FEE_CATS order
+  const orderedCats = [...FEE_CATS.map(c => c.label), ...Object.keys(catTotals).filter(k => !FEE_CATS.find(c => c.label === k))];
+  orderedCats.forEach(catLabel => {
+    if (!catTotals[catLabel]) return;
+    summaryHtml += `
+      <div style="background:#fff;border:2px solid var(--green);border-radius:10px;padding:.9rem 1rem;text-align:center">
+        <div style="font-size:.78rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${catLabel}</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--green)">GH₵ ${catTotals[catLabel].toFixed(2)}</div>
+      </div>`;
+  });
+  summaryHtml += `</div>`;
+
+  // ── Detailed Transactions Table ──
+  let tableHtml = `
+    <h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📋 All Transactions</h3>
+    <table class="fee-table" style="font-size:.84rem">
+      <thead><tr>
+        <th>Receipt</th><th>Student</th><th>Grade</th><th>Term</th>
+        <th>Category</th><th>Amount (GH₵)</th><th>Method</th>
+      </tr></thead><tbody>`;
+
+  // Group by receipt for clean display
+  const byReceipt = {};
+  entries.forEach(e => {
+    if (!byReceipt[e.receiptNo]) byReceipt[e.receiptNo] = [];
+    byReceipt[e.receiptNo].push(e);
+  });
+
+  Object.entries(byReceipt).forEach(([receipt, rows]) => {
+    const receiptTotal = rows.reduce((s, r) => s + r.amount, 0);
+    rows.forEach((e, i) => {
+      tableHtml += `<tr>
+        <td>${i === 0 ? receipt : ''}</td>
+        <td>${i === 0 ? e.studentName : ''}</td>
+        <td>${i === 0 ? e.grade : ''}</td>
+        <td>${e.term}</td>
+        <td>${e.category}</td>
+        <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
+        <td>${e.method === 'momo' ? '📱 MoMo' + (e.momoRef ? ' (' + e.momoRef + ')' : '') : e.method === 'bank' ? '🏦 Bank' : '💵 Cash'}</td>
+      </tr>`;
+    });
+    if (rows.length > 1) {
+      tableHtml += `<tr style="background:#f0faf0;font-weight:700">
+        <td colspan="5" style="text-align:right;color:var(--gray-3);font-size:.8rem">Receipt Total</td>
+        <td>GH₵ ${receiptTotal.toFixed(2)}</td><td></td>
+      </tr>`;
+    }
+  });
+
+  tableHtml += `</tbody><tfoot><tr style="font-weight:700;background:var(--green);color:#fff">
+    <td colspan="5">GRAND TOTAL</td>
+    <td>GH₵ ${grandTotal.toFixed(2)}</td><td></td>
+  </tr></tfoot></table>`;
+
+  container.innerHTML = summaryHtml + tableHtml;
+}
+
+function printDailyReport() {
+  const date = document.getElementById('daily-report-date')?.value || '';
+  document.title = `Daily Payments Report — ${date}`;
+  window.print();
+}
+
+// Set today's date when reports tab opens
+function initDailyReport() {
+  const el = document.getElementById('daily-report-date');
+  if (el && !el.value) el.value = new Date().toISOString().slice(0, 10);
+  renderDailyReport();
+}
+
+// ─────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// AUTO-PROMOTION: runs once on/after August 1st each year
+// ══════════════════════════════════════════════════════════════
+
+const PROMOTION_MAP = {
+  'Creche':      'Nursery 1',
+  'Nursery 1':   'Nursery 2',
+  'Nursery 2':   'KG 1',
+  'KG 1':        'KG 2',
+  'KG 2':        'Class 1',
+  'Class 1':     'Class 2',
+  'Class 2':     'Class 3',
+  'Class 3':     'Class 4',
+  'Class 4':     'Class 5',
+  'Class 5':     'Class 6',
+  'Class 6':     'JHS Form 1',
+  'JHS Form 1':  'JHS Form 2',
+  'JHS Form 2':  'JHS Form 3',
+  // JHS Form 3 students graduate — handled separately
+};
+
+async function checkAndRunPromotion() {
+  // Only admins can trigger promotion
+  if (currentUser?.role !== 'admin') return;
+
+  const now       = new Date();
+  const thisYear  = now.getFullYear();
+  // Promotion window: August 1st onwards
+  const promDate  = new Date(thisYear, 7, 1); // month is 0-indexed, 7 = August
+  if (now < promDate) return; // not yet August 1st
+
+  // Check if promotion already ran this year
+  const lastProm = await dbGet('appData/lastPromotion');
+  if (lastProm && lastProm.year === thisYear) return; // already done
+
+  // Ask admin to confirm
+  const jhs3 = students.filter(s => s.grade === 'JHS Form 3');
+  const total = students.length;
+  const graduates = jhs3.length;
+  const promoted  = students.filter(s => PROMOTION_MAP[s.grade]).length;
+
+  const msg = `🎓 Annual Grade Promotion
+
+` +
+    `It is August 1st or later — time to promote students to the next grade.
+
+` +
+    `• ${promoted} students will be promoted to their next grade
+` +
+    `• ${graduates} JHS Form 3 students will be marked as Graduated
+
+` +
+    `This will also reset the active term to Term 1.
+
+` +
+    `Run promotion now?`;
+
+  if (!confirm(msg)) return;
+
+  runPromotion(thisYear);
+}
+
+function runPromotion(year) {
+  if (!requireAdmin('run grade promotions')) return;
+
+  let promoted = 0, graduated = 0;
+
+  students.forEach(s => {
+    if (PROMOTION_MAP[s.grade]) {
+      s.grade = PROMOTION_MAP[s.grade];
+      // Reset fees for new term cycle (clear paid amounts, keep billed from schedule)
+      const newSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {});
+      const isJHS = s.grade.startsWith('JHS');
+      ['Term 1','Term 2','Term 3'].forEach(term => {
+        s.fees[term] = {};
+        FEE_CATS.forEach(cat => {
+          if (cat.jhsOnly && !isJHS) return;
+          const billed = (newSched[term] && newSched[term][cat.key]) || 0;
+          s.fees[term][cat.key] = { billed, paid: 0 };
+        });
+      });
+      s.arrears = {};
+      promoted++;
+    } else if (s.grade === 'JHS Form 3') {
+      s.grade = 'Graduated';
+      graduated++;
+    }
+  });
+
+  // Reset active term to Term 1
+  activeTerm = 'Term 1';
+  document.getElementById('global-term').value = 'Term 1';
+  document.getElementById('active-term-badge').textContent = 'Term 1';
+
+  // Record promotion timestamp
+  dbSet('appData/lastPromotion', {
+    year,
+    date: new Date().toISOString(),
+    promotedBy: currentUser.name || currentUser.username,
+    promoted,
+    graduated
+  });
+
+  save();
+  renderDashboard();
+  renderStudentList();
+
+  toast(`🎓 Promotion complete! ${promoted} students promoted, ${graduated} graduated. Active term reset to Term 1.`);
+}
+
+async function showPromotionPanel() {
+  if (!requireAdmin('run grade promotions')) return;
+
+  const lastProm = await dbGet('appData/lastPromotion');
+  const now      = new Date();
+  const thisYear = now.getFullYear();
+
+  let warning = '';
+  if (lastProm && lastProm.year === thisYear) {
+    warning = `\n\n⚠️ Promotion has ALREADY been run this year (${lastProm.date ? new Date(lastProm.date).toLocaleDateString('en-GH') : 'date unknown'} by ${lastProm.promotedBy || 'unknown'}).\nRunning it again will re-promote everyone.`;
+  }
+
+  const jhs3      = students.filter(s => s.grade === 'JHS Form 3').length;
+  const toPromote = students.filter(s => PROMOTION_MAP[s.grade]).length;
+
+  const msg = `🎓 Manual Grade Promotion${warning}\n\n` +
+    `• ${toPromote} students will move to their next grade\n` +
+    `• ${jhs3} JHS Form 3 students will be marked Graduated\n\n` +
+    `Active term will reset to Term 1.\n\nProceed?`;
+
+  if (!confirm(msg)) return;
+  runPromotion(thisYear);
+}
+
+async function renderPromotionStatus() {
+  const el = document.getElementById('promotion-status');
+  if (!el) return;
+  const lastProm = await dbGet('appData/lastPromotion');
+  if (lastProm) {
+    const d = lastProm.date ? new Date(lastProm.date).toLocaleDateString('en-GH') : '—';
+    el.innerHTML = `<strong>Last promotion:</strong> ${d} by ${lastProm.promotedBy || '—'} &nbsp;·&nbsp; ${lastProm.promoted || 0} promoted, ${lastProm.graduated || 0} graduated`;
+  } else {
+    el.textContent = 'No promotion has been run yet.';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+
 function renderReport() {
   const term = document.getElementById('report-term').value;
   const grades = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
@@ -3174,16 +3550,36 @@ function genReceiptNo() {
 // ─────────────────────────────────────────────
 // SHOW RECEIPT
 // ─────────────────────────────────────────────
-function showReceipt(s, receiptNo, amount, method, category, term, momoRef) {
+function showReceipt(s, receiptNo, amount, method, category, term, momoRef, breakdown) {
   const today = new Date().toLocaleDateString('en-GH',{day:'2-digit',month:'long',year:'numeric'});
   const methodLabel = method==='momo'?'Mobile Money (MoMo)':method==='bank'?'Bank Transfer':'Cash';
+
+  // Find the payment log entry to get breakdown if not passed
+  if (!breakdown) {
+    const logEntry = (s.paymentLog||[]).find(p => p.receiptNo === receiptNo);
+    if (logEntry && logEntry.breakdown && logEntry.breakdown.length > 1) {
+      breakdown = logEntry.breakdown;
+    }
+  }
+
   const rows = [
     ['Receipt No.', receiptNo], ['Date', today], ['Student', s.name],
     ['Student ID', s.id], ['Grade', s.grade], ['Term', term],
-    ['For', category], ['Method', methodLabel]
+    ['Method', methodLabel]
   ];
   if (method === 'momo' && momoRef) rows.push(['MoMo Ref.', momoRef]);
-  const gridHtml = rows.map(r => '<div class="receipt-row"><span class="receipt-label">'+r[0]+'</span><span class="receipt-value">'+r[1]+'</span></div>').join('');
+
+  let gridHtml = rows.map(r => '<div class="receipt-row"><span class="receipt-label">'+r[0]+'</span><span class="receipt-value">'+r[1]+'</span></div>').join('');
+
+  // Add breakdown section
+  if (breakdown && breakdown.length > 1) {
+    gridHtml += '<div class="receipt-row" style="grid-column:1/-1;margin-top:.4rem"><span class="receipt-label" style="font-weight:700">Payment Breakdown</span></div>';
+    breakdown.forEach(b => {
+      gridHtml += '<div class="receipt-row"><span class="receipt-label" style="padding-left:.8rem">→ '+b.label+'</span><span class="receipt-value">GH₵ '+b.amount.toFixed(2)+'</span></div>';
+    });
+  } else {
+    gridHtml += '<div class="receipt-row"><span class="receipt-label">For</span><span class="receipt-value">'+category+'</span></div>';
+  }
   const momoBlock = (method === 'momo' && momoRef)
     ? '<div style="text-align:center;margin:.6rem 0;padding:.5rem;background:#fff8e1;border-radius:8px;border:1px solid #ffe082;font-size:.82rem;color:#b8690f"><strong>📱 MoMo Transaction ID</strong><br><span style="font-size:1rem;font-weight:700;letter-spacing:.05em">' + momoRef + '</span></div>'
     : '';
