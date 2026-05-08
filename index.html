@@ -2011,11 +2011,18 @@ function termTotals(student, term) {
   const discFactor = 1 - (totalDiscPct / 100);
 
   // Standard fee categories (discounts apply)
+  // NOTE: Firebase drops keys with value 0, so we must also check the fee schedule
   let rawBilled = 0, effBilled = 0, paid = 0;
-  Object.values(tf).forEach(f => {
-    rawBilled += f.billed || 0;
-    effBilled += (f.billed || 0) * discFactor;
-    paid      += Math.min((f.billed||0) * discFactor, f.paid || 0);
+  const gradeSched = (feeSchedule[student.grade] || DEFAULT_FEE_SCHEDULE[student.grade] || {})[term] || {};
+  FEE_CATS.forEach(cat => {
+    if (cat.jhsOnly && !student.grade.startsWith('JHS')) return;
+    const f = tf[cat.key];
+    // billed: use stored value, fall back to fee schedule, fall back to 0
+    const billed = (f && f.billed != null) ? f.billed : (gradeSched[cat.key] || 0);
+    const paidAmt = (f && f.paid != null)  ? f.paid  : 0;
+    rawBilled += billed;
+    effBilled += billed * discFactor;
+    paid      += Math.min(billed * discFactor, paidAmt);
   });
 
   // Scholarship: fixed deduction from billed (after % discounts)
@@ -2242,9 +2249,12 @@ function renderDetail(id) {
 
     FEE_CATS.forEach(cat => {
       if (cat.jhsOnly && !isJHS) return;
-      const rawF = (s.fees[term] && s.fees[term][cat.key]) || { billed: 0, paid: 0 };
-      const catEffBilled = rawF.billed * (1 - totalDiscPct/100);
-      const catPaid = Math.min(catEffBilled, rawF.paid || 0);
+      const rawF = (s.fees[term] && s.fees[term][cat.key]);
+      const gradeSched2 = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
+      const catBilled = (rawF && rawF.billed != null) ? rawF.billed : (gradeSched2[cat.key] || 0);
+      const catPaidRaw = (rawF && rawF.paid != null)  ? rawF.paid  : 0;
+      const catEffBilled = catBilled * (1 - totalDiscPct/100);
+      const catPaid = Math.min(catEffBilled, catPaidRaw);
       const bal = catEffBilled - catPaid;
       const balClass = bal > 0.005 ? 'owing' : 'paid-full';
       html += `<tr>
