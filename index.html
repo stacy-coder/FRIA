@@ -2112,6 +2112,11 @@ function gradeOrder(g) {
 function openDetail(id) {
   const s = students.find(x => x.id === id);
   if (!s) return;
+  // Switch to Students tab first if not already there
+  const studentsTab = document.getElementById('tab-students');
+  if (studentsTab && !studentsTab.classList.contains('active')) {
+    showTab('students');
+  }
   document.getElementById('list-view').style.display = 'none';
   document.getElementById('detail-view').classList.add('open');
   renderDetail(id);
@@ -2653,8 +2658,8 @@ function renderDashboard() {
     <table class="report-table"><thead><tr>
       <th>Name</th><th>Grade</th><th>Balance Owing</th>
     </tr></thead><tbody>
-    ${owing.map(s=>`<tr>
-      <td><strong>${s.name}</strong></td>
+    ${owing.map(s=>`<tr style="cursor:pointer" onclick="openDetail('${s.id}')" title="Click to open ${s.name}'s account">
+      <td><strong style="color:var(--green);text-decoration:underline;text-underline-offset:3px">${s.name}</strong></td>
       <td>${s.grade}</td>
       <td style="color:var(--danger);font-weight:700">GH₵ ${s.bal.toFixed(2)}</td>
     </tr>`).join('')}
