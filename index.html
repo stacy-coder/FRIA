@@ -1698,7 +1698,7 @@ const DEFAULT_FEE_SCHEDULE = (function() {
 })();
 
 let students      = [];
-let activeTerm    = 'Term 1';
+let activeTerm    = 'Term 3';
 let feeSchedule   = {};
 let storeProducts = [];   // { id, name, category, price, stock, reorderAt }
 let storeSales    = [];   // { id, date, items:[{productId,name,qty,unitPrice}], total, cashReceived }
@@ -1710,7 +1710,7 @@ async function loadAllData() {
   if (data) {
     students    = data.students    ? Object.values(data.students)    : [];
     feeSchedule = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0) ? data.feeSchedule : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
-    activeTerm  = data.activeTerm  || 'Term 1';
+    activeTerm  = data.activeTerm  || 'Term 3';
     storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
     storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
   }
@@ -3583,9 +3583,10 @@ function confirmImport() {
     const isJHS = r.grade.startsWith('JHS');
     const sid = r.id || autoID();
 
-    // Build fees from schedule or zeros
+    // Build fees from schedule or defaults
     const fees = {};
-    const sched = feeSchedule[r.grade] || {};
+    const activeSched = (Object.keys(feeSchedule).length > 0) ? feeSchedule : DEFAULT_FEE_SCHEDULE;
+    const sched = activeSched[r.grade] || {};
     TERMS.forEach(term => {
       fees[term] = {};
       FEE_CATS.forEach(cat => {
