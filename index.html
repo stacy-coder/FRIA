@@ -3459,7 +3459,7 @@ function renderDetail(id) {
               style="width:90px;padding:.3rem .4rem;font-size:.76rem;border-radius:6px;border:1.5px solid var(--gray-2);background:var(--gray-1)">
               <option value="cash">💵 Cash</option>
               <option value="momo">📱 MoMo</option>
-              <option value="bank">🏦 Bank</option>
+              
             </select>
             <button class="btn btn-gold btn-sm" onclick="openPayModal('${id}','${term}')">Pay</button>
           </div>
@@ -3552,7 +3552,7 @@ function renderDetail(id) {
                 <td style="font-weight:700">GH₵ ${p.amount.toFixed(2)}</td>
                 <td style="min-width:200px">${breakdownHtml}</td>
                 <td>
-                  <span class="method-badge m-${p.method}">${p.method==='momo'?'📱 MoMo':p.method==='bank'?'🏦 Bank':'💵 Cash'}</span>
+                  <span class="method-badge m-${p.method}">${p.method==='momo'?'📱 MoMo':'💵 Cash'}</span>
                   ${p.momoRef ? `<br><span class="momo-ref-val">Ref: ${p.momoRef}</span>` : ''}
                 </td>
                 <td class="no-print" style="white-space:nowrap">
@@ -3990,7 +3990,7 @@ function renderDailyReport() {
       <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:.9rem">
         <span>💵 Cash: <strong>GH₵ ${grandCash.toFixed(2)}</strong></span>
         <span>📱 MoMo: <strong>GH₵ ${grandMomo.toFixed(2)}</strong></span>
-        <span>🏦 Bank: <strong>GH₵ ${grandBank.toFixed(2)}</strong></span>
+        
         <span style="margin-left:auto;font-size:1rem;font-weight:700">TOTAL: GH₵ ${grandTotal.toFixed(2)}</span>
       </div>
     </div>`;
@@ -4028,7 +4028,7 @@ function renderDailyReport() {
       <div style="font-size:.84rem;color:#1565c0">
         💵 Cash: <strong>GH₵ ${busTotalCash.toFixed(2)}</strong> &nbsp;
         📱 MoMo: <strong>GH₵ ${busTotalMomo.toFixed(2)}</strong> &nbsp;
-        🏦 Bank: <strong>GH₵ ${busTotalBank.toFixed(2)}</strong>
+        
       </div>
     </div>`;
   }
@@ -4042,7 +4042,7 @@ function renderDailyReport() {
       <div style="font-size:.84rem;color:#795548">
         💵 Cash: <strong>GH₵ ${storeTotalCash.toFixed(2)}</strong> &nbsp;
         📱 MoMo: <strong>GH₵ ${storeTotalMomo.toFixed(2)}</strong> &nbsp;
-        🏦 Bank: <strong>GH₵ ${storeTotalBank.toFixed(2)}</strong>
+        
       </div>
     </div>`;
   }
@@ -4088,7 +4088,7 @@ function renderDailyReport() {
         <td>${i===0?e.grade:''}</td>
         <td>${e.term}</td><td>${e.category}</td>
         <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
-        <td>${e.method==='momo'?'📱 MoMo'+(e.momoRef?' ('+e.momoRef+')':''):e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
+        <td>${e.method==='momo'?'📱 MoMo'+(e.momoRef?' ('+e.momoRef+')':''):'💵 Cash'}</td>
       </tr>`;
     });
     if (rows.length>1) html += `<tr style="background:#f0faf0;font-weight:700"><td colspan="5" style="text-align:right;font-size:.78rem;color:var(--gray-3)">Receipt Total</td><td>GH₵ ${rt.toFixed(2)}</td><td></td></tr>`;
@@ -4099,7 +4099,7 @@ function renderDailyReport() {
       <td>${e.receiptNo}</td><td>${e.studentName}</td><td>${e.grade}</td>
       <td>${e.term}</td><td>🚌 Bus Fee (${e.month})</td>
       <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
-      <td>${e.method==='momo'?'📱 MoMo':e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
+      <td>${e.method==='momo'?'📱 MoMo':'💵 Cash'}</td>
     </tr>`;
   });
 
@@ -4108,7 +4108,7 @@ function renderDailyReport() {
       <td>${e.receiptNo}</td><td colspan="3" style="color:var(--gray-3);font-size:.78rem">${e.items}</td>
       <td>🛒 Store Sale</td>
       <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
-      <td>${e.method==='momo'?'📱 MoMo':e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
+      <td>${e.method==='momo'?'📱 MoMo':'💵 Cash'}</td>
     </tr>`;
   });
 
@@ -4945,7 +4945,7 @@ function genReceiptNo() {
 // ─────────────────────────────────────────────
 function showReceipt(s, receiptNo, amount, method, category, term, momoRef, breakdown) {
   const today = new Date().toLocaleDateString('en-GH',{day:'2-digit',month:'long',year:'numeric'});
-  const methodLabel = method==='momo'?'Mobile Money (MoMo)':method==='bank'?'Bank Transfer':'Cash';
+  const methodLabel = method==='momo'?'Mobile Money (MoMo)':'Cash';
 
   // Find the payment log entry to get breakdown if not passed
   if (!breakdown) {
@@ -5938,7 +5938,7 @@ function toast(msg) {
           style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
           <option value="cash">💵 Cash</option>
           <option value="momo">📱 Mobile Money (MoMo)</option>
-          <option value="bank">🏦 Bank Transfer</option>
+          
         </select>
       </div>
       <div>
@@ -5982,7 +5982,7 @@ function toast(msg) {
           style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
           <option value="cash">💵 Cash</option>
           <option value="momo">📱 Mobile Money</option>
-          <option value="bank">🏦 Bank Transfer</option>
+          
         </select>
       </div>
       <div>
