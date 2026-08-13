@@ -367,6 +367,44 @@
   }
 
 
+
+  /* ── CLASS BILLS — Two per page print layout ── */
+  .class-bill-section { page-break-after: always; }
+  .class-bill-section:last-child { page-break-after: avoid; }
+  .class-bill-page {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    page-break-inside: avoid;
+  }
+  .mini-bill {
+    border: 1px solid #ccc;
+    padding: .7rem .8rem;
+    font-size: .72rem;
+    font-family: 'DM Sans', sans-serif;
+    page-break-inside: avoid;
+    position: relative;
+  }
+  .mini-bill:nth-child(odd) { border-right: 2px dashed #aaa; }
+  .mini-bill-header { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; border-bottom: 1.5px solid var(--green); padding-bottom: .3rem; }
+  .mini-bill-logo { width: 28px; height: 28px; }
+  .mini-bill-school { font-size: .65rem; color: var(--green); font-weight: 700; line-height: 1.2; }
+  .mini-bill-student { margin-bottom: .4rem; line-height: 1.6; }
+  .mini-bill-table { width: 100%; border-collapse: collapse; font-size: .68rem; margin-bottom: .4rem; }
+  .mini-bill-table th { background: var(--green); color: #fff; padding: .2rem .4rem; text-align: left; font-size: .63rem; }
+  .mini-bill-table td { padding: .18rem .4rem; border-bottom: 1px solid #eee; }
+  .mini-bill-total { display: flex; justify-content: space-between; font-weight: 700; font-size: .75rem; padding-top: .3rem; border-top: 1.5px solid var(--green); margin-top: .2rem; }
+  .mini-bill-balance-owed { color: #c0392b; }
+  .mini-bill-balance-clear { color: #1a6b3a; }
+  .mini-bill-cut { text-align: center; font-size: .6rem; color: #999; padding: .15rem 0; border-top: 1px dashed #bbb; margin-top: .3rem; }
+
+  @media print {
+    .class-bills-print-container { display: block !important; }
+    .class-bill-section { page-break-after: always; }
+    .class-bill-page { page-break-inside: avoid; }
+    .mini-bill { border: 1px solid #999; }
+    body.printing-class-bills > *:not(.class-bills-print-container) { display: none !important; }
+  }
   /* ── BULK IMPORT ── */
   .upload-zone {
     border: 2.5px dashed var(--gray-2); border-radius: 14px;
@@ -1124,9 +1162,9 @@
 
     <!-- ── DAILY PAYMENTS REPORT ── -->
     <div class="card" id="daily-report-card">
-      <h2>💵 Daily Payments Report</h2>
+      <h2>📊 End-of-Day Finance Report</h2>
       <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1.2rem">
-        All payments received on a selected date, broken down by fee category — so the finance officer knows exactly how much cash to put in each envelope.
+        A complete daily summary for the finance officer — fee envelopes, bus fees, store sales, and a full MoMo allocation breakdown.
       </p>
       <div class="term-row" style="flex-wrap:wrap;gap:.8rem">
         <div>
@@ -1140,6 +1178,54 @@
         </div>
       </div>
       <div id="daily-report-content" style="margin-top:1.2rem"></div>
+    </div>
+
+    <!-- ── CLASS BILLS PRINT ── -->
+    <div class="card no-print" id="class-bills-card">
+      <h2>🖨️ Print Monthly / Termly Bills by Class</h2>
+      <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1.2rem">
+        Generates bills for an entire class — two per page to save paper. Each class prints as its own section.
+      </p>
+      <div class="term-row" style="flex-wrap:wrap;gap:.8rem;margin-bottom:1rem">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Grade / Class</label>
+          <select id="class-bill-grade" style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option value="ALL">— All Classes —</option>
+            <option>Creche</option><option>Nursery 1</option><option>Nursery 2</option>
+            <option>KG 1</option><option>KG 2</option>
+            <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+            <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+            <option>JHS Form 1</option><option>JHS Form 2</option><option>JHS Form 3</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Term</label>
+          <select id="class-bill-term" style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option>Term 1</option><option>Term 2</option><option selected>Term 3</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Bill Type</label>
+          <select id="class-bill-type" style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option value="monthly">Monthly Bill</option>
+            <option value="termly">Full Term Bill</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Month (if monthly)</label>
+          <select id="class-bill-month" style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:.8rem">
+        <button class="btn btn-primary" onclick="previewClassBills()">👁 Preview</button>
+        <button class="btn btn-export" onclick="printClassBills()">🖨️ Print</button>
+      </div>
+      <div id="class-bills-preview" style="margin-top:1.2rem"></div>
     </div>
 
     <!-- ── SCHOOL-WIDE FEE REPORT ── -->
@@ -2795,6 +2881,198 @@ function printBusRosters() {
 }
 
 // ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// CLASS BILLS — Two per page, grouped by class
+// ══════════════════════════════════════════════════════════════
+
+const GRADE_SORT_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
+  'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
+  'JHS Form 1','JHS Form 2','JHS Form 3'];
+
+function buildMiniBill(s, term, billType, month, logoB64) {
+  const isJHS = s.grade.startsWith('JHS');
+  const disc  = s.discounts || {};
+  const totalDiscPct = Math.min(100, getDiscountPct(disc));
+  const discFactor   = 1 - totalDiscPct / 100;
+  const gradeSched   = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
+
+  const today = new Date().toLocaleDateString('en-GH', { day:'2-digit', month:'short', year:'numeric' });
+
+  // Build fee rows
+  let rows = '';
+  let totalBilled = 0, totalPaid = 0;
+
+  FEE_CATS.forEach(cat => {
+    if (cat.jhsOnly && !isJHS) return;
+    if (s.cormKid) return;
+    if (s.fullSponsor && cat.key === 'tuition') return;
+    const f = s.fees[term]?.[cat.key];
+    const billed = ((f && f.billed != null) ? f.billed : (gradeSched[cat.key] || 0)) * discFactor;
+    const paid   = Math.min(billed, (f && f.paid != null) ? f.paid : 0);
+    if (billed === 0) return;
+
+    const display = billType === 'monthly' ? billed / 3 : billed;
+    const paidDisplay = billType === 'monthly'
+      ? Math.min(display, (paid / billed) * display || 0)
+      : paid;
+    const bal = display - paidDisplay;
+
+    totalBilled += display;
+    totalPaid   += paidDisplay;
+    rows += `<tr>
+      <td>${cat.label}</td>
+      <td style="text-align:right">${display.toFixed(2)}</td>
+      <td style="text-align:right">${paidDisplay.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:600;color:${bal>0.005?'#c0392b':'#1a6b3a'}">${Math.max(0,bal).toFixed(2)}</td>
+    </tr>`;
+  });
+
+  // Bus fee row
+  const busRate = getBusRateForGrade(s.grade);
+  if (s.ridesBus && busRate > 0) {
+    const busPayment = (busFeePayments[s.id]?.[term]?.[month]) || {};
+    const busPaid    = busPayment.paid || 0;
+    const busBal     = busRate - busPaid;
+    totalBilled += busRate;
+    totalPaid   += busPaid;
+    rows += `<tr style="background:#e3f2fd">
+      <td>🚌 Bus Fee${month?' ('+month+')':''}</td>
+      <td style="text-align:right">${busRate.toFixed(2)}</td>
+      <td style="text-align:right">${busPaid.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:600;color:${busBal>0.005?'#c0392b':'#1a6b3a'}">${Math.max(0,busBal).toFixed(2)}</td>
+    </tr>`;
+  }
+
+  const balance  = totalBilled - totalPaid;
+  const balClass = balance > 0.005 ? 'mini-bill-balance-owed' : 'mini-bill-balance-clear';
+  const balLabel = balance > 0.005 ? `GH₵ ${balance.toFixed(2)} OWING` : '✔ PAID';
+  const billTitle = billType === 'monthly'
+    ? `Monthly Bill — ${month} (${term})`
+    : `Term Bill — ${term}`;
+
+  return `
+    <div class="mini-bill">
+      <div class="mini-bill-header">
+        <img class="mini-bill-logo" src="${logoB64}" alt="FRIA"/>
+        <div class="mini-bill-school">Faith Root International Academy<br><span style="font-weight:400;color:#555;font-size:.6rem">Student Accounts Office · Accra, Ghana</span></div>
+        <div style="margin-left:auto;font-size:.65rem;color:var(--gray-3);text-align:right">${billTitle}<br>${today}</div>
+      </div>
+      <div class="mini-bill-student">
+        <strong>${s.name}</strong><br>
+        ${s.grade} &nbsp;·&nbsp; ID: ${s.id}
+        ${s.guardian ? '<br>Guardian: ' + s.guardian + (s.phone ? ' · ' + s.phone : '') : ''}
+      </div>
+      <table class="mini-bill-table">
+        <thead><tr><th>Fee</th><th>Billed</th><th>Paid</th><th>Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="color:#999;text-align:center">No fees</td></tr>'}</tbody>
+      </table>
+      <div class="mini-bill-total">
+        <span>Total</span>
+        <span>GH₵ ${totalBilled.toFixed(2)}</span>
+        <span class="${balClass}">${balLabel}</span>
+      </div>
+      <div class="mini-bill-cut">✂ — — — — — — — — — — — — — — — — — — — — — — — — — — — — — —</div>
+    </div>`;
+}
+
+function generateClassBillsHTML(gradeFilter, term, billType, month) {
+  const logoB64 = document.querySelector('.school-logo-img')?.src || SCHOOL_LOGO;
+
+  const filtered = students
+    .filter(s => s.grade !== 'Graduated' && (gradeFilter === 'ALL' || s.grade === gradeFilter))
+    .sort((a, b) => {
+      const ai = GRADE_SORT_ORDER.indexOf(a.grade);
+      const bi = GRADE_SORT_ORDER.indexOf(b.grade);
+      if (ai !== bi) return ai - bi;
+      return a.name.localeCompare(b.name);
+    });
+
+  if (filtered.length === 0) return '<p style="color:var(--gray-3)">No students found for this selection.</p>';
+
+  // Group by grade
+  const byGrade = {};
+  filtered.forEach(s => {
+    if (!byGrade[s.grade]) byGrade[s.grade] = [];
+    byGrade[s.grade].push(s);
+  });
+
+  let html = '<div class="class-bills-print-container">';
+
+  GRADE_SORT_ORDER.filter(g => byGrade[g]).forEach(grade => {
+    const gradeStudents = byGrade[grade];
+    html += `<div class="class-bill-section">
+      <div style="background:var(--green);color:#fff;padding:.4rem .8rem;font-size:.8rem;font-weight:700;margin-bottom:4px" class="no-print">
+        ${grade} — ${gradeStudents.length} students
+      </div>`;
+
+    // Two per page
+    for (let i = 0; i < gradeStudents.length; i += 2) {
+      const s1 = gradeStudents[i];
+      const s2 = gradeStudents[i+1];
+      html += `<div class="class-bill-page">`;
+      html += buildMiniBill(s1, term, billType, month, logoB64);
+      html += s2 ? buildMiniBill(s2, term, billType, month, logoB64) : '<div class="mini-bill" style="background:#f9f9f9"></div>';
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function previewClassBills() {
+  const grade    = document.getElementById('class-bill-grade')?.value || 'ALL';
+  const term     = document.getElementById('class-bill-term')?.value  || activeTerm;
+  const billType = document.getElementById('class-bill-type')?.value  || 'monthly';
+  const month    = document.getElementById('class-bill-month')?.value || '';
+  const preview  = document.getElementById('class-bills-preview');
+  if (preview) preview.innerHTML = generateClassBillsHTML(grade, term, billType, month);
+}
+
+function printClassBills() {
+  const grade    = document.getElementById('class-bill-grade')?.value || 'ALL';
+  const term     = document.getElementById('class-bill-term')?.value  || activeTerm;
+  const billType = document.getElementById('class-bill-type')?.value  || 'monthly';
+  const month    = document.getElementById('class-bill-month')?.value || '';
+
+  const billsHTML = generateClassBillsHTML(grade, term, billType, month);
+
+  // Open a new window for clean printing
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"/>
+    <title>Class Bills — ${grade} — ${term}</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'DM Sans', Arial, sans-serif; background: #fff; }
+      .class-bill-section { page-break-after: always; }
+      .class-bill-section:last-child { page-break-after: avoid; }
+      .class-bill-page { display: grid; grid-template-columns: 1fr 1fr; page-break-inside: avoid; }
+      .mini-bill { border: 1px solid #bbb; padding: .7rem .9rem; font-size: .72rem; position: relative; }
+      .mini-bill:nth-child(odd) { border-right: 2px dashed #999; }
+      .mini-bill-header { display: flex; align-items: flex-start; gap: .5rem; margin-bottom: .5rem; border-bottom: 2px solid #2e7d32; padding-bottom: .4rem; }
+      .mini-bill-logo { width: 30px; height: 30px; }
+      .mini-bill-school { font-size: .65rem; color: #2e7d32; font-weight: 700; line-height: 1.3; }
+      .mini-bill-student { margin-bottom: .5rem; line-height: 1.7; font-size: .72rem; }
+      .mini-bill-table { width: 100%; border-collapse: collapse; font-size: .67rem; margin-bottom: .4rem; }
+      .mini-bill-table th { background: #2e7d32; color: #fff; padding: .22rem .4rem; text-align: left; }
+      .mini-bill-table td { padding: .2rem .4rem; border-bottom: 1px solid #eee; }
+      .mini-bill-total { display: flex; justify-content: space-between; font-weight: 700; font-size: .75rem; padding-top: .35rem; border-top: 2px solid #2e7d32; }
+      .mini-bill-balance-owed { color: #c0392b; }
+      .mini-bill-balance-clear { color: #1a6b3a; }
+      .mini-bill-cut { text-align: center; font-size: .58rem; color: #bbb; padding: .2rem 0; border-top: 1px dashed #ccc; margin-top: .35rem; }
+      .grade-header { background: #2e7d32; color: #fff; padding: .35rem .8rem; font-size: .8rem; font-weight: 700; }
+    </style>
+  </head><body>${billsHTML}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 500);
+}
+
+// ─────────────────────────────────────────────────────────────
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
   const btn = document.getElementById('owing-toggle');
@@ -3616,128 +3894,229 @@ function renderDailyReport() {
   const container = document.getElementById('daily-report-content');
   if (!dateInput || !container) return;
 
-  // Default to today if no date selected
-  if (!dateInput.value) {
-    dateInput.value = new Date().toISOString().slice(0, 10);
-  }
-  const selectedDate = dateInput.value; // YYYY-MM-DD
+  if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+  const selectedDate = dateInput.value;
 
-  // Collect all payment log entries for this date
-  const entries = []; // { studentName, grade, receiptNo, term, category, key, amount, method, momoRef }
+  // ── Collect school fee entries ──
+  const entries = [];
   students.forEach(s => {
     (s.paymentLog || []).forEach(p => {
-      const pDate = p.date ? p.date.slice(0, 10) : '';
-      if (pDate !== selectedDate) return;
-
+      if ((p.date || '').slice(0,10) !== selectedDate) return;
       if (p.breakdown && p.breakdown.length > 0) {
-        // New-style: distributed payment with breakdown
-        p.breakdown.forEach(b => {
-          entries.push({
-            studentName: s.name, grade: s.grade,
-            receiptNo: p.receiptNo, term: p.term,
-            category: b.label, key: b.key,
-            amount: b.amount, method: p.method,
-            momoRef: p.momoRef || ''
-          });
-        });
+        p.breakdown.forEach(b => entries.push({
+          studentName: s.name, grade: s.grade,
+          receiptNo: p.receiptNo, term: p.term,
+          category: b.label, key: b.key,
+          amount: b.amount, method: p.method, momoRef: p.momoRef || ''
+        }));
       } else {
-        // Old-style: single category payment
         entries.push({
           studentName: s.name, grade: s.grade,
           receiptNo: p.receiptNo, term: p.term,
           category: p.category, key: null,
-          amount: p.amount, method: p.method,
-          momoRef: p.momoRef || ''
+          amount: p.amount, method: p.method, momoRef: p.momoRef || ''
         });
       }
     });
   });
 
-  if (entries.length === 0) {
+  // ── Collect bus fee entries ──
+  const busEntries = [];
+  students.forEach(s => {
+    if (!s.ridesBus) return;
+    Object.entries(busFeePayments[s.id] || {}).forEach(([term, months]) => {
+      Object.entries(months || {}).forEach(([month, payment]) => {
+        if (!payment || !payment.date) return;
+        if (payment.date.slice(0,10) !== selectedDate) return;
+        busEntries.push({
+          studentName: s.name, grade: s.grade,
+          month, term, amount: payment.paid || 0,
+          method: payment.method || 'cash', receiptNo: payment.receiptNo || ''
+        });
+      });
+    });
+  });
+
+  // ── Collect store sales ──
+  const storeEntries = [];
+  (storeSales || []).forEach(sale => {
+    if ((sale.date || '').slice(0,10) !== selectedDate) return;
+    storeEntries.push({
+      receiptNo: sale.id || '—',
+      amount: sale.total || 0,
+      method: sale.method || 'cash',
+      items: (sale.items || []).map(i => i.name).join(', ')
+    });
+  });
+
+  const hasAny = entries.length || busEntries.length || storeEntries.length;
+  if (!hasAny) {
     container.innerHTML = `<div class="empty"><div class="e-icon">📭</div><p>No payments recorded for ${selectedDate}.</p></div>`;
     return;
   }
 
-  // Total by category
-  const catTotals = {};
-  const methodTotals = { cash: 0, momo: 0, bank: 0 };
+  // ── Totals ──
+  const catTotals    = {};   // fee category label → amount
+  const catMomoTotals = {}; // fee category label → momo amount
+  const methodTotals  = { cash: 0, momo: 0, bank: 0 };
+
   entries.forEach(e => {
-    const key = e.category;
-    catTotals[key] = (catTotals[key] || 0) + e.amount;
-    methodTotals[e.method] = (methodTotals[e.method] || 0) + e.amount;
+    catTotals[e.category]     = (catTotals[e.category]     || 0) + e.amount;
+    methodTotals[e.method]    = (methodTotals[e.method]    || 0) + e.amount;
+    if (e.method === 'momo') catMomoTotals[e.category] = (catMomoTotals[e.category] || 0) + e.amount;
   });
-  const grandTotal = entries.reduce((s, e) => s + e.amount, 0);
 
-  // ── Envelope Summary ──
-  let summaryHtml = `
-    <div style="background:var(--green);color:#fff;border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:1.4rem">
-      <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.8;margin-bottom:.6rem">
-        📅 ${selectedDate} — Total Collected: GH₵ ${grandTotal.toFixed(2)}
+  const busTotalCash  = busEntries.filter(e=>e.method==='cash').reduce((s,e)=>s+e.amount,0);
+  const busTotalMomo  = busEntries.filter(e=>e.method==='momo').reduce((s,e)=>s+e.amount,0);
+  const busTotalBank  = busEntries.filter(e=>e.method==='bank').reduce((s,e)=>s+e.amount,0);
+  const busTotal      = busTotalCash + busTotalMomo + busTotalBank;
+
+  const storeTotalCash = storeEntries.filter(e=>e.method==='cash').reduce((s,e)=>s+e.amount,0);
+  const storeTotalMomo = storeEntries.filter(e=>e.method==='momo').reduce((s,e)=>s+e.amount,0);
+  const storeTotalBank = storeEntries.filter(e=>e.method==='bank').reduce((s,e)=>s+e.amount,0);
+  const storeTotal     = storeTotalCash + storeTotalMomo + storeTotalBank;
+
+  const feeTotal    = entries.reduce((s,e)=>s+e.amount,0);
+  const grandTotal  = feeTotal + busTotal + storeTotal;
+  const grandCash   = (methodTotals.cash||0) + busTotalCash + storeTotalCash;
+  const grandMomo   = (methodTotals.momo||0) + busTotalMomo + storeTotalMomo;
+  const grandBank   = (methodTotals.bank||0) + busTotalBank + storeTotalBank;
+
+  // ── Header banner ──
+  let html = `
+    <div style="background:var(--green);color:#fff;border-radius:12px;padding:1.2rem 1.6rem;margin-bottom:1.6rem;page-break-inside:avoid">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:.5rem">📅 End-of-Day Report — ${selectedDate}</div>
+      <div style="font-size:.84rem;opacity:.85;margin-bottom:.8rem">Faith Root International Academy</div>
+      <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:.9rem">
+        <span>💵 Cash: <strong>GH₵ ${grandCash.toFixed(2)}</strong></span>
+        <span>📱 MoMo: <strong>GH₵ ${grandMomo.toFixed(2)}</strong></span>
+        <span>🏦 Bank: <strong>GH₵ ${grandBank.toFixed(2)}</strong></span>
+        <span style="margin-left:auto;font-size:1rem;font-weight:700">TOTAL: GH₵ ${grandTotal.toFixed(2)}</span>
       </div>
-      <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.88rem">
-        <span>💵 Cash: <strong>GH₵ ${(methodTotals.cash||0).toFixed(2)}</strong></span>
-        <span>📱 MoMo: <strong>GH₵ ${(methodTotals.momo||0).toFixed(2)}</strong></span>
-        <span>🏦 Bank: <strong>GH₵ ${(methodTotals.bank||0).toFixed(2)}</strong></span>
-      </div>
-    </div>
+    </div>`;
 
-    <h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📬 Envelope Breakdown</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem;margin-bottom:1.4rem">`;
-
-  // Sort categories by FEE_CATS order
+  // ── Section 1: Fee Envelopes ──
   const orderedCats = [...FEE_CATS.map(c => c.label), ...Object.keys(catTotals).filter(k => !FEE_CATS.find(c => c.label === k))];
-  orderedCats.forEach(catLabel => {
-    if (!catTotals[catLabel]) return;
-    summaryHtml += `
-      <div style="background:#fff;border:2px solid var(--green);border-radius:10px;padding:.9rem 1rem;text-align:center">
-        <div style="font-size:.78rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${catLabel}</div>
-        <div style="font-size:1.4rem;font-weight:700;color:var(--green)">GH₵ ${catTotals[catLabel].toFixed(2)}</div>
-      </div>`;
-  });
-  summaryHtml += `</div>`;
+  const activeCats  = orderedCats.filter(l => catTotals[l] > 0);
 
-  // ── Detailed Transactions Table ──
-  let tableHtml = `
-    <h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📋 All Transactions</h3>
-    <table class="fee-table" style="font-size:.84rem">
-      <thead><tr>
-        <th>Receipt</th><th>Student</th><th>Grade</th><th>Term</th>
-        <th>Category</th><th>Amount (GH₵)</th><th>Method</th>
-      </tr></thead><tbody>`;
+  if (activeCats.length > 0) {
+    html += `<h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem;margin-top:0">📬 Fee Envelopes — Cash to Separate</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.8rem;margin-bottom:1.6rem">`;
+    activeCats.forEach(label => {
+      const total     = catTotals[label] || 0;
+      const momoAmt   = catMomoTotals[label] || 0;
+      const cashAmt   = total - momoAmt;
+      html += `
+        <div style="background:#fff;border:2px solid var(--green);border-radius:10px;padding:.9rem 1rem">
+          <div style="font-size:.75rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">${label}</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--green);margin-bottom:.3rem">GH₵ ${total.toFixed(2)}</div>
+          <div style="font-size:.75rem;color:var(--gray-3)">
+            💵 Cash: GH₵ ${cashAmt.toFixed(2)}<br>
+            📱 MoMo: GH₵ ${momoAmt.toFixed(2)}
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
 
-  // Group by receipt for clean display
+  // ── Section 2: Bus Fees ──
+  if (busEntries.length > 0) {
+    html += `<h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">🚌 Bus Fees</h3>
+    <div style="background:#e3f2fd;border:2px solid #1565c0;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.6rem;display:flex;gap:2rem;flex-wrap:wrap;align-items:center">
+      <div><div style="font-size:.75rem;font-weight:700;color:#1565c0;text-transform:uppercase">Total Collected</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#1565c0">GH₵ ${busTotal.toFixed(2)}</div></div>
+      <div style="font-size:.84rem;color:#1565c0">
+        💵 Cash: <strong>GH₵ ${busTotalCash.toFixed(2)}</strong> &nbsp;
+        📱 MoMo: <strong>GH₵ ${busTotalMomo.toFixed(2)}</strong> &nbsp;
+        🏦 Bank: <strong>GH₵ ${busTotalBank.toFixed(2)}</strong>
+      </div>
+    </div>`;
+  }
+
+  // ── Section 3: Store Sales ──
+  if (storeEntries.length > 0) {
+    html += `<h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">🛒 FRIA Store</h3>
+    <div style="background:#fff8e1;border:2px solid #f9a825;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.6rem;display:flex;gap:2rem;flex-wrap:wrap;align-items:center">
+      <div><div style="font-size:.75rem;font-weight:700;color:#f9a825;text-transform:uppercase">Total Sales</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#e65100">GH₵ ${storeTotal.toFixed(2)}</div></div>
+      <div style="font-size:.84rem;color:#795548">
+        💵 Cash: <strong>GH₵ ${storeTotalCash.toFixed(2)}</strong> &nbsp;
+        📱 MoMo: <strong>GH₵ ${storeTotalMomo.toFixed(2)}</strong> &nbsp;
+        🏦 Bank: <strong>GH₵ ${storeTotalBank.toFixed(2)}</strong>
+      </div>
+    </div>`;
+  }
+
+  // ── Section 4: MoMo Breakdown ──
+  if (grandMomo > 0) {
+    html += `<h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📱 MoMo Breakdown — How to Allocate GH₵ ${grandMomo.toFixed(2)}</h3>
+    <table class="fee-table" style="font-size:.84rem;margin-bottom:1.6rem">
+      <thead><tr><th>Category</th><th>MoMo Amount</th><th>Notes</th></tr></thead><tbody>`;
+
+    activeCats.forEach(label => {
+      const momoAmt = catMomoTotals[label] || 0;
+      if (momoAmt <= 0) return;
+      html += `<tr><td>${label}</td><td style="font-weight:700">GH₵ ${momoAmt.toFixed(2)}</td><td style="color:var(--gray-3);font-size:.78rem">Transfer to ${label} envelope</td></tr>`;
+    });
+    if (busTotalMomo > 0) {
+      html += `<tr><td>🚌 Bus Fees</td><td style="font-weight:700">GH₵ ${busTotalMomo.toFixed(2)}</td><td style="color:var(--gray-3);font-size:.78rem">Transfer to Bus Fees</td></tr>`;
+    }
+    if (storeTotalMomo > 0) {
+      html += `<tr><td>🛒 Store Sales</td><td style="font-weight:700">GH₵ ${storeTotalMomo.toFixed(2)}</td><td style="color:var(--gray-3);font-size:.78rem">Transfer to Store account</td></tr>`;
+    }
+    html += `<tr style="background:var(--green);color:#fff;font-weight:700"><td>TOTAL MoMo</td><td>GH₵ ${grandMomo.toFixed(2)}</td><td></td></tr>`;
+    html += `</tbody></table>`;
+  }
+
+  // ── Section 5: All Transactions ──
+  html += `<h3 style="font-size:.95rem;color:var(--green);margin-bottom:.8rem">📋 All Transactions</h3>
+  <table class="fee-table" style="font-size:.83rem">
+    <thead><tr><th>Receipt</th><th>Student</th><th>Grade</th><th>Term</th><th>Category</th><th>Amount (GH₵)</th><th>Method</th></tr></thead><tbody>`;
+
+  // Group fee entries by receipt
   const byReceipt = {};
   entries.forEach(e => {
     if (!byReceipt[e.receiptNo]) byReceipt[e.receiptNo] = [];
     byReceipt[e.receiptNo].push(e);
   });
-
   Object.entries(byReceipt).forEach(([receipt, rows]) => {
-    const receiptTotal = rows.reduce((s, r) => s + r.amount, 0);
-    rows.forEach((e, i) => {
-      tableHtml += `<tr>
-        <td>${i === 0 ? receipt : ''}</td>
-        <td>${i === 0 ? e.studentName : ''}</td>
-        <td>${i === 0 ? e.grade : ''}</td>
-        <td>${e.term}</td>
-        <td>${e.category}</td>
+    const rt = rows.reduce((s,r)=>s+r.amount,0);
+    rows.forEach((e,i) => {
+      html += `<tr>
+        <td>${i===0?receipt:''}</td>
+        <td>${i===0?e.studentName:''}</td>
+        <td>${i===0?e.grade:''}</td>
+        <td>${e.term}</td><td>${e.category}</td>
         <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
-        <td>${e.method === 'momo' ? '📱 MoMo' + (e.momoRef ? ' (' + e.momoRef + ')' : '') : e.method === 'bank' ? '🏦 Bank' : '💵 Cash'}</td>
+        <td>${e.method==='momo'?'📱 MoMo'+(e.momoRef?' ('+e.momoRef+')':''):e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
       </tr>`;
     });
-    if (rows.length > 1) {
-      tableHtml += `<tr style="background:#f0faf0;font-weight:700">
-        <td colspan="5" style="text-align:right;color:var(--gray-3);font-size:.8rem">Receipt Total</td>
-        <td>GH₵ ${receiptTotal.toFixed(2)}</td><td></td>
-      </tr>`;
-    }
+    if (rows.length>1) html += `<tr style="background:#f0faf0;font-weight:700"><td colspan="5" style="text-align:right;font-size:.78rem;color:var(--gray-3)">Receipt Total</td><td>GH₵ ${rt.toFixed(2)}</td><td></td></tr>`;
   });
 
-  tableHtml += `</tbody><tfoot><tr style="font-weight:700;background:var(--green);color:#fff">
-    <td colspan="5">GRAND TOTAL</td>
-    <td>GH₵ ${grandTotal.toFixed(2)}</td><td></td>
+  busEntries.forEach(e => {
+    html += `<tr style="background:#e3f2fd">
+      <td>${e.receiptNo}</td><td>${e.studentName}</td><td>${e.grade}</td>
+      <td>${e.term}</td><td>🚌 Bus Fee (${e.month})</td>
+      <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
+      <td>${e.method==='momo'?'📱 MoMo':e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
+    </tr>`;
+  });
+
+  storeEntries.forEach(e => {
+    html += `<tr style="background:#fff8e1">
+      <td>${e.receiptNo}</td><td colspan="3" style="color:var(--gray-3);font-size:.78rem">${e.items}</td>
+      <td>🛒 Store Sale</td>
+      <td style="font-weight:600">GH₵ ${e.amount.toFixed(2)}</td>
+      <td>${e.method==='momo'?'📱 MoMo':e.method==='bank'?'🏦 Bank':'💵 Cash'}</td>
+    </tr>`;
+  });
+
+  html += `</tbody><tfoot><tr style="font-weight:700;background:var(--green);color:#fff">
+    <td colspan="5">GRAND TOTAL</td><td>GH₵ ${grandTotal.toFixed(2)}</td><td></td>
   </tr></tfoot></table>`;
 
+  container.innerHTML = html;
   container.innerHTML = summaryHtml + tableHtml;
 }
 
