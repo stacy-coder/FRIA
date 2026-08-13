@@ -847,6 +847,7 @@
   <button class="tab-btn" onclick="showTab('import')">📤 Import</button>
   <button class="tab-btn" onclick="showTab('students')">👨‍🎓 All Students</button>
   <button class="tab-btn" onclick="showTab('reports')">📊 Reports</button>
+  <button class="tab-btn" onclick="showTab('bus')">🚌 Bus Fees</button>
   <button class="tab-btn" onclick="showTab('store')">🛒 FRIA Store</button>
   <button class="tab-btn" onclick="showTab('settings')">⚙️ Settings</button>
 </div>
@@ -883,7 +884,7 @@
         </div>
         <div>
           <label>Grade Level</label>
-          <select id="new-grade">
+          <select id="new-grade" onchange="onNewStudentGradeChange()">
             <option value="">— Select Grade —</option>
             <optgroup label="Creche / Nursery">
               <option>Creche</option>
@@ -964,6 +965,11 @@
           </select>
         </div>
         <div>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:600;margin-bottom:.3rem">
+            <input type="checkbox" id="new-is-new-student" onchange="onNewStudentGradeChange()" style="width:15px;height:15px;accent-color:var(--green)"/>
+            🆕 New Student <small style="font-weight:400;text-transform:none">(adds Friday Wear, Sports Wear & Badge to first term bill)</small>
+          </label>
+          <div id="new-student-fee-preview"></div>
           <label>Scholarship / Bursary (GH₵) <small style="font-weight:400;text-transform:none">fixed amount off total per term</small></label>
           <input type="number" min="0" step="0.01" id="new-scholarship" placeholder="0.00"/>
         </div>
@@ -979,6 +985,14 @@
           <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600">
             <input type="checkbox" id="new-full-sponsor" style="width:16px;height:16px;accent-color:var(--green)"/>
             Fully Sponsored <small style="font-weight:400;text-transform:none">(no tuition, other fees apply)</small>
+          </label>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="new-rides-bus" style="width:16px;height:16px;accent-color:#1565c0"/>
+            🚌 Rides Bus <small style="font-weight:400;text-transform:none">(bus fee applies)</small>
+          </label>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="new-retained" style="width:16px;height:16px;accent-color:#e65100"/>
+            🔁 Retained <small style="font-weight:400;text-transform:none">(stays in same grade on promotion)</small>
           </label>
         </div>
       </div>
@@ -1144,6 +1158,47 @@
   </div>
 
   <!-- ════════════ FRIA STORE ════════════ -->
+  <!-- ════════════ BUS FEES ════════════ -->
+  <div id="tab-bus" class="section">
+
+    <!-- Settings card -->
+    <div class="card">
+      <h2>🚌 Bus Fee Settings</h2>
+      <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem">
+        Set the monthly bus fee per grade group. Students with <strong>Rides Bus</strong> ticked will appear in the class rosters below.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem;margin-bottom:1rem" id="bus-fee-rate-grid"></div>
+      <button class="btn btn-primary btn-sm" onclick="saveBusFeeRates()">💾 Save Bus Fee Rates</button>
+    </div>
+
+    <!-- Roster + payment tracking -->
+    <div class="card">
+      <h2>📋 Bus Rider Rosters</h2>
+      <div class="term-row" style="flex-wrap:wrap;gap:.8rem">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Term</label>
+          <select id="bus-term" onchange="renderBusRosters()" style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option>Term 1</option><option>Term 2</option><option selected>Term 3</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Month</label>
+          <select id="bus-month" onchange="renderBusRosters()" style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-export btn-sm" onclick="printBusRosters()">🖨️ Print Rosters</button>
+        </div>
+      </div>
+      <div id="bus-rosters" style="margin-top:1.2rem"></div>
+    </div>
+
+  </div>
+
   <div id="tab-store" class="section">
 
     <!-- STORE DASHBOARD STRIP -->
@@ -1403,6 +1458,15 @@
       </div>
     </div>
 
+    <!-- ── EARLY PAYMENT DISCOUNT ── -->
+    <div class="card">
+      <h2>⚡ Early Payment Discount <span class="role-badge role-admin" style="font-size:.7rem;vertical-align:middle">Admin Only</span></h2>
+      <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem">
+        Set a date window at the start of each term. If a student pays their full term balance within this period, the discount is automatically applied to their tuition.
+      </p>
+      <div id="early-pay-ui"></div>
+    </div>
+
     <!-- ── GRADE PROMOTION ── -->
     <div class="card" id="promotion-card">
       <h2>🎓 Grade Promotion <span class="role-badge role-admin" style="font-size:.7rem;vertical-align:middle">Admin Only</span></h2>
@@ -1413,7 +1477,10 @@
         <strong>⚠️ This resets all fee records and sets the active term back to Term 1. Only run this at the start of a new academic year.</strong>
       </p>
       <div id="promotion-status" style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem"></div>
-      <button class="btn btn-gold" onclick="showPromotionPanel()">🎓 Run Grade Promotion</button>
+      <div style="display:flex;gap:.8rem;flex-wrap:wrap">
+        <button class="btn btn-gold" onclick="showPromotionPanel()">🎓 Run Grade Promotion</button>
+        <button class="btn" style="background:#fce8e6;color:var(--danger);border:1px solid #ef9a9a" onclick="reversePromotion()">↩️ Reverse Last Promotion</button>
+      </div>
     </div>
 
     <!-- ── RESET ── -->
@@ -1806,8 +1873,9 @@ function showTab(id) {
   closeDetail();
   if (id === 'students')  renderStudentList();
   if (id === 'reports')   { renderReport(); initDailyReport(); }
+  if (id === 'bus')       { renderBusFeeRateGrid(); renderBusRosters(); }
   if (id === 'dashboard') renderDashboard();
-  if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); }
+  if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); renderEarlyPayDiscountUI(); }
   if (id === 'import')    resetImport();
   if (id === 'store')     initStore();
 }
@@ -1898,8 +1966,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           applyRoleUI();
           await loadAllData();
           await loadFeeCats();
+          await loadEarlyPayDiscount();
+          await loadBusFees();
           hideLoading();
           checkAndRunPromotion();
+          // Set bus month selector to current month
+          const _bm = document.getElementById('bus-month');
+          if (_bm) _bm.value = new Date().toLocaleString('en',{month:'long'});
           document.getElementById('auth-screen').classList.add('hidden');
           renderDashboard();
 
@@ -1958,12 +2031,31 @@ function addStudent() {
   const scholarNote  = document.getElementById('new-scholar-note').value.trim();
   const cormKid      = document.getElementById('new-corm-kid')?.checked || false;
   const fullSponsor  = document.getElementById('new-full-sponsor')?.checked || false;
+  const ridesBus     = document.getElementById('new-rides-bus')?.checked || false;
+  const retained     = document.getElementById('new-retained')?.checked || false;
+  const isNewStudent = document.getElementById('new-is-new-student')?.checked || false;
+
+  // Add one-time registration fees for new students to Term 1
+  if (isNewStudent && !cormKid) {
+    const otf = getOneTimeFees(grade);
+    if (!fees['Term 1']) fees['Term 1'] = {};
+    fees['Term 1']['friday_wear'] = { billed: otf.friday_wear, paid: 0 };
+    fees['Term 1']['sports_wear'] = { billed: otf.sports_wear, paid: 0 };
+    fees['Term 1']['badge']       = { billed: otf.badge, paid: 0 };
+    // Add to FEE_CATS temporarily if not there
+    ['friday_wear','sports_wear','badge'].forEach(key => {
+      if (!FEE_CATS.find(c => c.key === key)) {
+        const labels = { friday_wear: 'Friday Wear', sports_wear: 'Sports Wear', badge: 'School Badge' };
+        FEE_CATS.push({ label: labels[key], key, restrict: 'none', jhsOnly: false, oneTime: true });
+      }
+    });
+  }
   students.push({ id: sid, name, grade,
     guardian, guardianRel, phone,
     guardian2, guardian2Rel, phone2,
     familyId, studentType,
-    scholarship, scholarNote, cormKid, fullSponsor, fees,
-    discounts: { advancePct: 0, familyPct: 0 },
+    scholarship, scholarNote, cormKid, fullSponsor, ridesBus, retained, fees,
+    discounts: { multiChild10: false, multiChild15: false, promoCode: '', promoDiscPct: 0, siblings: [] },
     paymentLog: [],
     arrears: {},
     addedOn: new Date().toISOString() });
@@ -1979,7 +2071,8 @@ function autoID() {
 }
 
 function clearForm() {
-  ['new-corm-kid','new-full-sponsor'].forEach(id => { const cb = document.getElementById(id); if (cb) cb.checked = false; });
+  ['new-corm-kid','new-full-sponsor','new-rides-bus','new-retained','new-is-new-student'].forEach(id => { const cb = document.getElementById(id); if (cb) cb.checked = false; });
+  const prev = document.getElementById('new-student-fee-preview'); if(prev) prev.innerHTML = '';
   ['new-name','new-id','new-guardian','new-phone','new-guardian2','new-phone2','new-family-id','new-scholarship','new-scholar-note'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -2194,7 +2287,7 @@ function deletePayment(studentId, receiptNo) {
   const isJHS = s.grade.startsWith('JHS');
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[p.term] || {};
   const disc = s.discounts || {};
-  const discFactor = 1 - (Math.min(100, (disc.advancePct||0) + (disc.familyPct||0)) / 100);
+  const discFactor = 1 - (Math.min(100, getDiscountPct(disc)) / 100);
 
   if (p.breakdown && p.breakdown.length > 0) {
     p.breakdown.forEach(b => {
@@ -2218,6 +2311,490 @@ function deletePayment(studentId, receiptNo) {
   toast(`🗑 Payment ${receiptNo} deleted and reversed on ${s.name}'s account.`);
 }
 
+
+function toggleRidesBus(studentId) {
+  const s = students.find(x => x.id === studentId);
+  if (!s) return;
+  s.ridesBus = document.getElementById('bus-' + studentId)?.checked || false;
+  save();
+  renderDetail(studentId);
+  toast(s.ridesBus ? '✅ Marked as bus rider.' : '✅ Bus rider status removed.');
+}
+
+function toggleRetained(studentId) {
+  const s = students.find(x => x.id === studentId);
+  if (!s) return;
+  s.retained = document.getElementById('retained-' + studentId)?.checked || false;
+  save();
+  renderDetail(studentId);
+  toast(s.retained ? '✅ Student marked as retained — will not be promoted.' : '✅ Retention removed.');
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// PAY MODAL
+// ══════════════════════════════════════════════════════════════
+let _payStudentId = null;
+let _payTerm      = null;
+
+function openPayModal(studentId, term) {
+  const s = students.find(x => x.id === studentId);
+  if (!s) return;
+  _payStudentId = studentId;
+  _payTerm      = term || activeTerm;
+
+  const { billed, paid } = termTotals(s, _payTerm);
+  const balance = Math.max(0, billed - paid);
+
+  document.getElementById('pay-modal-desc').innerHTML =
+    `<strong>${s.name}</strong> — ${s.grade} &nbsp;·&nbsp; ${_payTerm} &nbsp;·&nbsp; Balance: <strong style="color:var(--danger)">GH₵ ${balance.toFixed(2)}</strong>`;
+
+  // Default date to today
+  document.getElementById('pay-modal-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('pay-modal-amount').value = '';
+  document.getElementById('pay-modal-receipt').value = '';
+  document.getElementById('pay-modal-momo').value = '';
+  document.getElementById('pay-modal-method').value = 'cash';
+  document.getElementById('pay-modal-momo-row').style.display = 'none';
+  document.getElementById('pay-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('pay-modal-amount').focus(), 100);
+}
+
+function closePayModal() {
+  document.getElementById('pay-modal').style.display = 'none';
+  _payStudentId = null;
+  _payTerm      = null;
+}
+
+function toggleMomoRef() {
+  const method = document.getElementById('pay-modal-method').value;
+  document.getElementById('pay-modal-momo-row').style.display = method === 'momo' ? '' : 'none';
+}
+
+function submitPayModal() {
+  const amount    = parseFloat(document.getElementById('pay-modal-amount').value) || 0;
+  const dateVal   = document.getElementById('pay-modal-date').value;
+  const method    = document.getElementById('pay-modal-method').value;
+  const receiptNo = document.getElementById('pay-modal-receipt').value.trim();
+  const momoRef   = document.getElementById('pay-modal-momo').value.trim();
+
+  if (amount <= 0)    return toast('⚠️ Please enter an amount greater than 0.');
+  if (!dateVal)       return toast('⚠️ Please select a payment date.');
+  if (!receiptNo)     return toast('⚠️ Please enter the receipt number from your receipt book.');
+  if (method === 'momo' && !momoRef) return toast('⚠️ Please enter the MoMo Transaction ID.');
+
+  const s = students.find(x => x.id === _payStudentId);
+  if (!s) return closePayModal();
+
+  const term = _payTerm;
+  if (!s.fees[term]) s.fees[term] = {};
+
+  const disc       = s.discounts || {};
+  const isJHS      = s.grade.startsWith('JHS');
+  const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
+
+  // Check early payment discount
+  const payDate = new Date(dateVal);
+  let earlyDisc = 0;
+  if (earlyPayDiscount && earlyPayDiscount.active) {
+    const start = new Date(earlyPayDiscount.start);
+    const end   = new Date(earlyPayDiscount.end);
+    if (payDate >= start && payDate <= end) {
+      // Check if this payment covers the full term balance
+      const { billed, paid } = termTotals(s, term);
+      if (amount >= billed - paid) earlyDisc = earlyPayDiscount.pct || 10;
+    }
+  }
+
+  const totalDiscPct = Math.min(100, getDiscountPct(disc) + earlyDisc);
+  const discFactor   = 1 - (totalDiscPct / 100);
+
+  let remaining = amount;
+  const breakdown = [];
+  const payOrder  = getPaymentOrder().filter(cat => !(cat.jhsOnly && !isJHS) && !(s.fullSponsor && cat.key === 'tuition'));
+
+  payOrder.forEach(cat => {
+    if (remaining <= 0.005) return;
+    if (!s.fees[term][cat.key]) {
+      s.fees[term][cat.key] = { billed: gradeSched[cat.key] || 0, paid: 0 };
+    }
+    const effBilled   = (s.fees[term][cat.key].billed || gradeSched[cat.key] || 0) * discFactor;
+    const alreadyPaid = s.fees[term][cat.key].paid || 0;
+    const catBalance  = Math.max(0, effBilled - alreadyPaid);
+    if (catBalance <= 0.005) return;
+    const apply = Math.min(remaining, catBalance);
+    s.fees[term][cat.key].paid = alreadyPaid + apply;
+    remaining -= apply;
+    breakdown.push({ key: cat.key, label: cat.label, amount: apply });
+  });
+
+  const totalApplied = breakdown.reduce((sum, b) => sum + b.amount, 0);
+  if (totalApplied <= 0) {
+    closePayModal();
+    return toast('⚠️ This student has no outstanding balance for this term.');
+  }
+
+  if (!s.paymentLog) s.paymentLog = [];
+  s.paymentLog.push({
+    receiptNo,
+    date: new Date(dateVal).toISOString(),
+    term,
+    category: breakdown.length === 1 ? breakdown[0].label : 'Multiple Categories',
+    breakdown,
+    amount: totalApplied,
+    method,
+    momoRef: momoRef || '',
+    earlyDiscApplied: earlyDisc > 0 ? earlyDisc : undefined
+  });
+
+  save();
+  closePayModal();
+
+  const summaryLabel = breakdown.length === 1
+    ? breakdown[0].label
+    : breakdown.map(b => b.label + ': GH₵' + b.amount.toFixed(2)).join(', ');
+
+  showReceipt(s, receiptNo, totalApplied, method, summaryLabel, term, momoRef);
+  renderDetail(_payStudentId);
+  renderDashboard();
+
+  if (earlyDisc > 0) toast(`✅ ${earlyDisc}% early payment discount applied on tuition!`);
+}
+
+// ── Early Payment Discount Settings ──────────────────────────
+let earlyPayDiscount = { active: false, start: '', end: '', pct: 10 };
+
+async function loadEarlyPayDiscount() {
+  const saved = await dbGet('appData/earlyPayDiscount');
+  if (saved) earlyPayDiscount = saved;
+  renderEarlyPayDiscountUI();
+}
+
+function renderEarlyPayDiscountUI() {
+  const el = document.getElementById('early-pay-ui');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end">
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="ep-active" ${earlyPayDiscount.active?'checked':''}
+          onchange="saveEarlyPayDiscount()" style="width:15px;height:15px;accent-color:var(--green)"/>
+        Enable early payment discount
+      </label>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-top:.8rem">
+      <div><label>From Date</label>
+        <input type="date" id="ep-start" value="${earlyPayDiscount.start||''}" onchange="saveEarlyPayDiscount()"
+          style="width:100%;padding:.45rem .7rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem"/></div>
+      <div><label>To Date</label>
+        <input type="date" id="ep-end" value="${earlyPayDiscount.end||''}" onchange="saveEarlyPayDiscount()"
+          style="width:100%;padding:.45rem .7rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem"/></div>
+      <div><label>Discount %</label>
+        <input type="number" id="ep-pct" value="${earlyPayDiscount.pct||10}" min="1" max="100" onchange="saveEarlyPayDiscount()"
+          style="width:100%;padding:.45rem .7rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem"/></div>
+    </div>
+    <p style="font-size:.78rem;color:var(--gray-3);margin-top:.5rem">
+      If a student pays the <strong>full term balance</strong> between these dates, the discount % is automatically applied to their tuition.
+    </p>`;
+}
+
+async function saveEarlyPayDiscount() {
+  earlyPayDiscount = {
+    active: document.getElementById('ep-active')?.checked || false,
+    start:  document.getElementById('ep-start')?.value || '',
+    end:    document.getElementById('ep-end')?.value || '',
+    pct:    parseFloat(document.getElementById('ep-pct')?.value) || 10
+  };
+  await dbSet('appData/earlyPayDiscount', earlyPayDiscount);
+  toast('✅ Early payment discount settings saved.');
+}
+
+// ─────────────────────────────────────────────────────────────
+
+// ── Discount helpers ──────────────────────────────────────────
+function enforceDiscMutex(id, changed) {
+  if (changed === 'mc10' && document.getElementById('disc-mc10-'+id)?.checked) {
+    const el = document.getElementById('disc-mc15-'+id);
+    if (el) el.checked = false;
+  } else if (changed === 'mc15' && document.getElementById('disc-mc15-'+id)?.checked) {
+    const el = document.getElementById('disc-mc10-'+id);
+    if (el) el.checked = false;
+  }
+}
+
+function addSiblingRow(studentId) {
+  const container = document.getElementById('siblings-'+studentId);
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'sibling-row';
+  row.style.cssText = 'display:flex;gap:.5rem;margin-bottom:.4rem;align-items:center';
+  row.innerHTML = `
+    <input class="sib-name" placeholder="Sibling name"
+      style="flex:2;padding:.35rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.84rem"/>
+    <input class="sib-grade" placeholder="Class"
+      style="flex:1;padding:.35rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.84rem"/>
+    <button onclick="this.closest('.sibling-row').remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem">✕</button>`;
+  container.appendChild(row);
+}
+
+// ── New student one-time fees ─────────────────────────────────
+const ONE_TIME_FEES = {
+  'friday_wear': { label: 'Friday Wear', upperJHS: 75, other: 70 },
+  'sports_wear': { label: 'Sports Wear', upperJHS: 75, other: 70 },
+  'badge':       { label: 'School Badge', all: 20 },
+};
+
+function getGradeGroup(grade) {
+  if (['Creche','Nursery 1','Nursery 2'].includes(grade)) return 'preschool';
+  if (['KG 1','KG 2','Class 1','Class 2','Class 3'].includes(grade)) return 'lower';
+  if (['Class 4','Class 5','Class 6'].includes(grade)) return 'upper';
+  if (['JHS Form 1','JHS Form 2','JHS Form 3'].includes(grade)) return 'jhs';
+  return 'other';
+}
+
+function isUpperOrJHS(grade) {
+  const g = getGradeGroup(grade);
+  return g === 'upper' || g === 'jhs';
+}
+
+function getOneTimeFees(grade) {
+  const upper = isUpperOrJHS(grade);
+  return {
+    friday_wear: upper ? 75 : 70,
+    sports_wear: upper ? 75 : 70,
+    badge: 20,
+  };
+}
+
+// Auto-fill fee preview when grade is selected on Add Student form
+function onNewStudentGradeChange() {
+  const grade = document.getElementById('new-grade')?.value;
+  const isNew = document.getElementById('new-is-new-student')?.checked;
+  const preview = document.getElementById('new-student-fee-preview');
+  if (!preview || !grade) return;
+
+  const sched = (feeSchedule[grade] || DEFAULT_FEE_SCHEDULE[grade] || {})['Term 1'] || {};
+  let total = 0;
+  let rows = '';
+
+  FEE_CATS.forEach(cat => {
+    if (cat.jhsOnly && !grade.startsWith('JHS')) return;
+    const amt = sched[cat.key] || 0;
+    if (amt === 0) return;
+    total += amt;
+    rows += `<tr><td>${cat.label}</td><td style="text-align:right">GH₵ ${amt.toFixed(2)}</td></tr>`;
+  });
+
+  if (isNew) {
+    const otf = getOneTimeFees(grade);
+    rows += `<tr style="border-top:1px dashed #ccc"><td colspan="2" style="font-size:.78rem;color:var(--gray-3);padding-top:.4rem">One-Time Registration Fees</td></tr>`;
+    rows += `<tr><td>Friday Wear</td><td style="text-align:right">GH₵ ${otf.friday_wear.toFixed(2)}</td></tr>`;
+    rows += `<tr><td>Sports Wear</td><td style="text-align:right">GH₵ ${otf.sports_wear.toFixed(2)}</td></tr>`;
+    rows += `<tr><td>School Badge</td><td style="text-align:right">GH₵ ${otf.badge.toFixed(2)}</td></tr>`;
+    total += otf.friday_wear + otf.sports_wear + otf.badge;
+  }
+
+  preview.innerHTML = rows
+    ? `<div style="margin-top:.8rem;background:var(--gray-1);border-radius:8px;padding:.8rem 1rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);margin-bottom:.4rem">📋 Term 1 Bill Preview</div>
+        <table style="width:100%;font-size:.84rem;border-collapse:collapse">${rows}</table>
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:.9rem;margin-top:.5rem;padding-top:.5rem;border-top:2px solid var(--green)">
+          <span>TOTAL DUE</span><span style="color:var(--green)">GH₵ ${total.toFixed(2)}</span>
+        </div>
+      </div>`
+    : '';
+}
+
+// ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// BUS FEES
+// ══════════════════════════════════════════════════════════════
+
+const GRADE_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
+  'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
+  'JHS Form 1','JHS Form 2','JHS Form 3'];
+
+const BUS_GRADE_GROUPS = [
+  { label: 'Pre-School',   grades: ['Creche','Nursery 1','Nursery 2'],              key: 'preschool' },
+  { label: 'Lower Basic',  grades: ['KG 1','KG 2','Class 1','Class 2','Class 3'],   key: 'lower'     },
+  { label: 'Upper Basic',  grades: ['Class 4','Class 5','Class 6'],                  key: 'upper'     },
+  { label: 'JHS',          grades: ['JHS Form 1','JHS Form 2','JHS Form 3'],         key: 'jhs'       },
+];
+
+let busFeeRates = {}; // { preschool: 0, lower: 0, upper: 0, jhs: 0 }
+let busFeePayments = {}; // { studentId: { 'Term 1': { 'January': { paid, date, receiptNo } } } }
+
+async function loadBusFees() {
+  const rates = await dbGet('appData/busFeeRates');
+  if (rates) busFeeRates = rates;
+  const payments = await dbGet('appData/busFeePayments');
+  if (payments) busFeePayments = payments;
+}
+
+async function saveBusFeeRates() {
+  BUS_GRADE_GROUPS.forEach(g => {
+    const val = parseFloat(document.getElementById('bus-rate-' + g.key)?.value) || 0;
+    busFeeRates[g.key] = val;
+  });
+  await dbSet('appData/busFeeRates', busFeeRates);
+  toast('✅ Bus fee rates saved.');
+  renderBusRosters();
+}
+
+function getBusRateForGrade(grade) {
+  for (const g of BUS_GRADE_GROUPS) {
+    if (g.grades.includes(grade)) return busFeeRates[g.key] || 0;
+  }
+  return 0;
+}
+
+function renderBusFeeRateGrid() {
+  const grid = document.getElementById('bus-fee-rate-grid');
+  if (!grid) return;
+  grid.innerHTML = BUS_GRADE_GROUPS.map(g => `
+    <div style="background:var(--gray-1);border-radius:8px;padding:.8rem">
+      <label style="font-size:.78rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">${g.label}</label>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <span style="font-size:.88rem">GH₵</span>
+        <input type="number" min="0" step="0.01" id="bus-rate-${g.key}"
+          value="${busFeeRates[g.key]||''}" placeholder="0.00"
+          style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.9rem;font-weight:600"/>
+        <span style="font-size:.78rem;color:var(--gray-3)">/mo</span>
+      </div>
+      <div style="font-size:.75rem;color:var(--gray-3);margin-top:.3rem">${g.grades.join(', ')}</div>
+    </div>`).join('');
+}
+
+function renderBusRosters() {
+  const container = document.getElementById('bus-rosters');
+  if (!container) return;
+
+  const term  = document.getElementById('bus-term')?.value  || activeTerm;
+  const month = document.getElementById('bus-month')?.value || '';
+
+  // Get all bus riders grouped by grade
+  const riders = students.filter(s => s.ridesBus && s.grade !== 'Graduated');
+  if (riders.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="e-icon">🚌</div><p>No students are currently marked as bus riders.<br>Open a student account and tick <strong>Rides Bus</strong> to add them.</p></div>';
+    return;
+  }
+
+  // Group by grade
+  const byGrade = {};
+  riders.forEach(s => {
+    if (!byGrade[s.grade]) byGrade[s.grade] = [];
+    byGrade[s.grade].push(s);
+  });
+
+  // Sort grades in school order
+  const sortedGrades = GRADE_ORDER.filter(g => byGrade[g]);
+
+  container.innerHTML = sortedGrades.map(grade => {
+    const gradeRiders = byGrade[grade].sort((a,b) => a.name.localeCompare(b.name));
+    const rate = getBusRateForGrade(grade);
+
+    const rows = gradeRiders.map((s, i) => {
+      const payment = (busFeePayments[s.id]?.[term]?.[month]) || {};
+      const isPaid  = payment.paid > 0;
+      return `<tr>
+        <td style="width:2rem">${i+1}</td>
+        <td><strong>${s.name}</strong></td>
+        <td>GH₵ ${rate.toFixed(2)}</td>
+        <td>
+          ${isPaid
+            ? `<span style="color:var(--success);font-weight:600">✔ GH₵${payment.paid.toFixed(2)} paid</span>
+               <span style="font-size:.75rem;color:var(--gray-3);margin-left:.4rem">${payment.receiptNo||''}</span>`
+            : `<span style="color:var(--danger);font-weight:600">⚠ Unpaid</span>`}
+        </td>
+        <td class="no-print">
+          ${isPaid
+            ? `<button class="btn btn-sm" style="background:#fce8e6;color:var(--danger);border:1px solid #ef9a9a"
+                onclick="deleteBusPayment('${s.id}','${term}','${month}')">🗑</button>`
+            : `<button class="btn btn-gold btn-sm" onclick="openBusPayModal('${s.id}','${term}','${month}','${grade}')">Pay</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const totalDue  = rate * gradeRiders.length;
+    const totalPaid = gradeRiders.reduce((sum, s) => sum + ((busFeePayments[s.id]?.[term]?.[month])?.paid || 0), 0);
+
+    return `
+      <div style="margin-bottom:1.6rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+          <h3 style="margin:0;font-size:.95rem;color:var(--green)">${grade} <span style="font-size:.78rem;color:var(--gray-3);font-weight:400">(${gradeRiders.length} riders)</span></h3>
+          <span style="font-size:.84rem;font-weight:600">
+            Collected: <span style="color:var(--green)">GH₵${totalPaid.toFixed(2)}</span>
+            &nbsp;/&nbsp; Due: GH₵${totalDue.toFixed(2)}
+          </span>
+        </div>
+        <table class="fee-table" style="font-size:.85rem">
+          <thead><tr><th>#</th><th>Student</th><th>Monthly Fee</th><th>Status</th><th class="no-print">Action</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+}
+
+// ── Bus payment modal ──
+let _busStudentId = null, _busTerm = null, _busMonth = null, _busGrade = null;
+
+function openBusPayModal(studentId, term, month, grade) {
+  _busStudentId = studentId;
+  _busTerm      = term;
+  _busMonth     = month;
+  _busGrade     = grade;
+
+  const s    = students.find(x => x.id === studentId);
+  const rate = getBusRateForGrade(grade);
+
+  document.getElementById('bus-pay-desc').innerHTML =
+    `<strong>${s?.name}</strong> — ${grade} &nbsp;·&nbsp; ${month} ${term} &nbsp;·&nbsp; Bus fee: <strong>GH₵${rate.toFixed(2)}</strong>`;
+  document.getElementById('bus-pay-amount').value  = rate || '';
+  document.getElementById('bus-pay-date').value    = new Date().toISOString().slice(0,10);
+  document.getElementById('bus-pay-receipt').value = '';
+  document.getElementById('bus-pay-method').value  = 'cash';
+  document.getElementById('bus-pay-modal').style.display = 'flex';
+}
+
+function closeBusPayModal() {
+  document.getElementById('bus-pay-modal').style.display = 'none';
+}
+
+async function submitBusPayment() {
+  const amount    = parseFloat(document.getElementById('bus-pay-amount')?.value) || 0;
+  const date      = document.getElementById('bus-pay-date')?.value;
+  const receiptNo = document.getElementById('bus-pay-receipt')?.value.trim();
+  const method    = document.getElementById('bus-pay-method')?.value || 'cash';
+
+  if (amount <= 0)  return toast('⚠️ Please enter an amount.');
+  if (!date)        return toast('⚠️ Please select a date.');
+  if (!receiptNo)   return toast('⚠️ Please enter the receipt number.');
+
+  if (!busFeePayments[_busStudentId]) busFeePayments[_busStudentId] = {};
+  if (!busFeePayments[_busStudentId][_busTerm]) busFeePayments[_busStudentId][_busTerm] = {};
+  busFeePayments[_busStudentId][_busTerm][_busMonth] = { paid: amount, date, receiptNo, method };
+
+  await dbSet('appData/busFeePayments', busFeePayments);
+  closeBusPayModal();
+  renderBusRosters();
+  toast(`✅ Bus fee payment recorded for ${students.find(x=>x.id===_busStudentId)?.name}.`);
+}
+
+async function deleteBusPayment(studentId, term, month) {
+  if (!confirm('Remove this bus fee payment?')) return;
+  if (busFeePayments[studentId]?.[term]) {
+    delete busFeePayments[studentId][term][month];
+    await dbSet('appData/busFeePayments', busFeePayments);
+    renderBusRosters();
+    toast('🗑 Bus fee payment removed.');
+  }
+}
+
+function printBusRosters() {
+  window.print();
+}
+
+// ─────────────────────────────────────────────────────────────
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
   const btn = document.getElementById('owing-toggle');
@@ -2280,7 +2857,7 @@ function renderStudentList() {
 function termTotals(student, term) {
   const tf = student.fees[term] || {};
   const disc = student.discounts || {};
-  const totalDiscPct = Math.min(100, (disc.advancePct || 0) + (disc.familyPct || 0));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc));
   const discFactor = 1 - (totalDiscPct / 100);
 
   // CORM Kid → zero fees on everything
@@ -2408,28 +2985,61 @@ function renderDetail(id) {
             style="width:16px;height:16px;accent-color:#f57f17"/>
           ✨ Fully Sponsored <span style="font-weight:400;color:var(--gray-3)">(no tuition, other fees apply)</span>
         </label>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:600">
+          <input type="checkbox" id="bus-${id}" ${s.ridesBus?'checked':''} onchange="toggleRidesBus('${id}')"
+            style="width:16px;height:16px;accent-color:#1565c0"/>
+          🚌 Rides Bus <span style="font-weight:400;color:var(--gray-3)">(bus fee applies)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:600">
+          <input type="checkbox" id="retained-${id}" ${s.retained?'checked':''} onchange="toggleRetained('${id}')"
+            style="width:16px;height:16px;accent-color:#e65100"/>
+          🔁 Retained <span style="font-weight:400;color:var(--gray-3)">(stays in same grade on promotion)</span>
+        </label>
       </div>
-      <div class="discount-row">
-        <div>
-          <label>⚡ Early Payment Discount (%)</label>
-          <input type="number" min="0" max="100" step="1" id="disc-advance-${id}"
-            value="${disc.advancePct||0}" placeholder="0"/>
-        </div>
-        <div>
-          <label>👨‍👩‍👧 Multi-Child Family Discount (%)
-            ${familySiblings>0?`<span style="color:var(--success);font-weight:600">&nbsp;— ${familySiblings} sibling(s) found</span>`:''}
+      <!-- Multi-child discount -->
+      <div style="margin-bottom:.8rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">👨‍👩‍👧 Multi-Child Family Discount</div>
+        <div style="display:flex;gap:1.2rem;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.88rem;font-weight:600">
+            <input type="checkbox" id="disc-mc10-${id}" ${disc.multiChild10?'checked':''} onchange="enforceDiscMutex('${id}','mc10')"
+              style="width:15px;height:15px;accent-color:var(--green)"/>
+            10% family discount
           </label>
-          <input type="number" min="0" max="100" step="1" id="disc-family-${id}"
-            value="${disc.familyPct||0}" placeholder="0"/>
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.88rem;font-weight:600">
+            <input type="checkbox" id="disc-mc15-${id}" ${disc.multiChild15?'checked':''} onchange="enforceDiscMutex('${id}','mc15')"
+              style="width:15px;height:15px;accent-color:var(--green)"/>
+            15% family discount
+          </label>
         </div>
-        <div style="display:flex;align-items:flex-end">
-          <button class="btn btn-primary btn-sm" onclick="saveDiscounts('${id}')">✅ Apply Discounts</button>
+        <div style="margin-top:.7rem">
+          <div style="font-size:.78rem;color:var(--gray-3);margin-bottom:.4rem">Siblings at FRIA:</div>
+          <div id="siblings-${id}">
+            ${(disc.siblings||[]).map((sib,si)=>`
+              <div class="sibling-row" style="display:flex;gap:.5rem;margin-bottom:.4rem;align-items:center">
+                <input class="sib-name" value="${sib.name}" placeholder="Sibling name"
+                  style="flex:2;padding:.35rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.84rem"/>
+                <input class="sib-grade" value="${sib.grade}" placeholder="Class"
+                  style="flex:1;padding:.35rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.84rem"/>
+                <button onclick="this.closest('.sibling-row').remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem">✕</button>
+              </div>`).join('')}
+          </div>
+          <button onclick="addSiblingRow('${id}')" class="btn btn-sm" style="font-size:.78rem;margin-top:.2rem">+ Add Sibling</button>
         </div>
       </div>
-      <p style="font-size:.76rem;color:var(--gray-3);margin-top:.6rem">
-        💡 Discounts are applied to the total billed amount per term. Combined discount cannot exceed 100%.
-        ${familySiblings>0?'Family discount is suggested — set the same % for all siblings manually.':''}
-      </p>
+      <!-- Promo code -->
+      <div style="margin-bottom:.8rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">🏷️ Promotional Discount Code</div>
+        <div style="display:flex;gap:.6rem;align-items:center">
+          <input type="text" id="disc-promo-${id}" value="${disc.promoCode||''}" placeholder="Enter promo code"
+            style="padding:.4rem .7rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem;width:180px;text-transform:uppercase"/>
+          <span style="font-size:.8rem;color:var(--gray-3)">${(disc.promoDiscPct||0)>0?'✅ '+disc.promoDiscPct+'% applied':''}</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="saveDiscounts('${id}')">✅ Save Discounts</button>
+        <span style="font-size:.8rem;color:var(--gray-3)">Current total discount: <strong>${getDiscountPct(disc)}%</strong></span>
+      </div>
+      <p style="font-size:.76rem;color:var(--gray-3);margin-top:.5rem">⚡ Early payment 10% discount is applied automatically at payment time when full term balance is paid within the discount window.</p>
     </div>`;
 
   TERMS.forEach(term => {
@@ -2517,7 +3127,7 @@ function renderDetail(id) {
                 </td>
                 <td class="no-print" style="white-space:nowrap">
                   <input type="number" min="0" step="0.01" id="mpay-${termKey}-${mi}-${id}" placeholder="0.00" style="width:90px"/>
-                  <button class="btn btn-gold btn-sm" onclick="recordMonthlyPayment('${id}','${termKey}',${mi})">Pay</button>
+                  <button class="btn btn-gold btn-sm" onclick="openPayModal('${id}','${activeTerm}')">Pay</button>
                 </td>
               </tr>`;
             }).join('')}
@@ -2573,7 +3183,7 @@ function renderDetail(id) {
               <option value="momo">📱 MoMo</option>
               <option value="bank">🏦 Bank</option>
             </select>
-            <button class="btn btn-gold btn-sm" onclick="recordPayment('${id}','${term}','${cat.key}')">Pay</button>
+            <button class="btn btn-gold btn-sm" onclick="openPayModal('${id}','${term}')">Pay</button>
           </div>
           <div class="momo-ref-wrap" id="momoref-${termKey}-${cat.key}-${id}">
             <input type="text" placeholder="📱 MoMo Transaction ID (e.g. AB123456789)"
@@ -2753,14 +3363,46 @@ function printDetailDirect() {
 function saveDiscounts(id) {
   const s = students.find(x => x.id === id);
   if (!s) return;
-  const adv = Math.min(100, Math.max(0, parseFloat(document.getElementById(`disc-advance-${id}`)?.value) || 0));
-  const fam = Math.min(100, Math.max(0, parseFloat(document.getElementById(`disc-family-${id}`)?.value) || 0));
-  if (adv + fam > 100) return toast('⚠️ Combined discount cannot exceed 100%.');
-  s.discounts = { advancePct: adv, familyPct: fam };
+  const mc10  = document.getElementById(`disc-mc10-${id}`)?.checked || false;
+  const mc15  = document.getElementById(`disc-mc15-${id}`)?.checked || false;
+  const promoCode = document.getElementById(`disc-promo-${id}`)?.value.trim() || '';
+  const promoDisc = validatePromoCode(promoCode);
+
+  // Sibling records
+  const siblingRows = document.querySelectorAll(`#siblings-${id} .sibling-row`);
+  const siblings = [];
+  siblingRows.forEach(row => {
+    const name  = row.querySelector('.sib-name')?.value.trim();
+    const grade = row.querySelector('.sib-grade')?.value;
+    if (name) siblings.push({ name, grade: grade || '' });
+  });
+
+  s.discounts = {
+    multiChild10: mc10 && !mc15,
+    multiChild15: mc15,
+    promoCode,
+    promoDiscPct: promoDisc,
+    siblings
+  };
   save();
-  toast(`✅ Discounts saved — ${adv+fam}% total applied to ${s.name}`);
+  const total = getDiscountPct(s.discounts);
+  toast(`✅ Discounts saved — ${total}% total applied to ${s.name}`);
   renderDetail(id);
   renderDashboard();
+}
+
+function validatePromoCode(code) {
+  if (!code) return 0;
+  // Promo codes stored in Firebase at appData/promoCodes
+  const codes = window._promoCodes || {};
+  return codes[code.toUpperCase()] || 0;
+}
+
+function getDiscountPct(disc) {
+  if (!disc) return 0;
+  const familyDisc = disc.multiChild15 ? 15 : disc.multiChild10 ? 10 : 0;
+  const promoDisc  = disc.promoDiscPct || 0;
+  return Math.min(100, familyDisc + promoDisc);
 }
 
 function recordMonthlyPayment(studentId, termKey, monthIndex) {
@@ -2821,7 +3463,7 @@ function recordPayment(studentId, term, catKey) {
   if (!s.fees[term]) s.fees[term] = {};
 
   const disc = s.discounts || {};
-  const totalDiscPct = Math.min(100, (disc.advancePct||0) + (disc.familyPct||0));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc));
   const discFactor = 1 - (totalDiscPct / 100);
   const isJHS = s.grade.startsWith('JHS');
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
@@ -2853,32 +3495,34 @@ function recordPayment(studentId, term, catKey) {
   const totalApplied = breakdown.reduce((sum, b) => sum + b.amount, 0);
   if (totalApplied <= 0) return toast('⚠️ This student has no outstanding balance for this term.');
 
-  // Log as one payment entry with breakdown
+  // Log payment synchronously — no async, always reliable
   if (!s.paymentLog) s.paymentLog = [];
 
-  function doLog(receiptNo) {
-    s.paymentLog.push({
-      receiptNo,
-      date: new Date().toISOString(),
-      term,
-      category: breakdown.length === 1 ? breakdown[0].label : 'Multiple Categories',
-      breakdown,
-      amount: totalApplied,
-      method,
-      momoRef: momoRef || ''
-    });
-    save();
-    const summaryLabel = breakdown.length === 1
-      ? breakdown[0].label
-      : breakdown.map(b => `${b.label}: GH₵${b.amount.toFixed(2)}`).join(', ');
-    showReceipt(s, receiptNo, totalApplied, method, summaryLabel, term, momoRef);
-    renderDetail(studentId);
-    renderDashboard();
-  }
+  const receiptNo = genReceiptNo();
 
-  genReceiptNoAsync()
-    .then(receiptNo => doLog(receiptNo))
-    .catch(() => doLog(genReceiptNo()));
+  s.paymentLog.push({
+    receiptNo,
+    date: new Date().toISOString(),
+    term,
+    category: breakdown.length === 1 ? breakdown[0].label : 'Multiple Categories',
+    breakdown,
+    amount: totalApplied,
+    method,
+    momoRef: momoRef || ''
+  });
+
+  save();
+
+  const summaryLabel = breakdown.length === 1
+    ? breakdown[0].label
+    : breakdown.map(b => b.label + ': GH₵' + b.amount.toFixed(2)).join(', ');
+
+  showReceipt(s, receiptNo, totalApplied, method, summaryLabel, term, momoRef);
+  renderDetail(studentId);
+  renderDashboard();
+
+  // Also update Firebase receipt counter in background (non-blocking)
+  genReceiptNoAsync().catch(() => {});
 }
 
 function deleteStudent(id) {
@@ -2906,11 +3550,29 @@ function renderDashboard() {
     if (billed - paid > 0) countOwing++;
   });
 
+  // Monthly balance — what's due this month based on instalment
+  const now = new Date();
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const currentMonth = monthNames[now.getMonth()];
+  let monthBilled = 0, monthPaid = 0;
+  students.forEach(s => {
+    const { billed } = termTotals(s, term);
+    const monthlyInstalment = billed / 3;
+    // Find how much this student paid this month
+    const paidThisMonth = (s.paymentLog||[])
+      .filter(p => p.term === term && p.date && new Date(p.date).getMonth() === now.getMonth() && new Date(p.date).getFullYear() === now.getFullYear())
+      .reduce((sum, p) => sum + (p.amount||0), 0);
+    monthBilled += monthlyInstalment;
+    monthPaid   += Math.min(monthlyInstalment, paidThisMonth);
+  });
+
   document.getElementById('dash-summary').innerHTML = `
     <div class="summary-box"><div class="sb-label">Total Students</div><div class="sb-value">${students.length}</div></div>
-    <div class="summary-box"><div class="sb-label">Total Billed (${term})</div><div class="sb-value">GH₵ ${totalBilled.toFixed(2)}</div></div>
-    <div class="summary-box"><div class="sb-label">Total Collected</div><div class="sb-value">GH₵ ${totalPaid.toFixed(2)}</div></div>
-    <div class="summary-box danger"><div class="sb-label">Total Outstanding</div><div class="sb-value">GH₵ ${(totalBilled-totalPaid).toFixed(2)}</div></div>
+    <div class="summary-box"><div class="sb-label">${currentMonth} — Due</div><div class="sb-value">GH₵ ${monthBilled.toFixed(2)}</div></div>
+    <div class="summary-box danger"><div class="sb-label">${currentMonth} — Owing</div><div class="sb-value">GH₵ ${(monthBilled-monthPaid).toFixed(2)}</div></div>
+    <div class="summary-box"><div class="sb-label">Term Total Billed</div><div class="sb-value">GH₵ ${totalBilled.toFixed(2)}</div></div>
+    <div class="summary-box"><div class="sb-label">Term Total Collected</div><div class="sb-value">GH₵ ${totalPaid.toFixed(2)}</div></div>
+    <div class="summary-box danger"><div class="sb-label">Term Outstanding</div><div class="sb-value">GH₵ ${(totalBilled-totalPaid).toFixed(2)}</div></div>
     <div class="summary-box danger"><div class="sb-label">Students Owing</div><div class="sb-value">${countOwing}</div></div>`;
 
   const owing = students
@@ -3162,7 +3824,7 @@ function runPromotion(year) {
   let promoted = 0, graduated = 0;
 
   students.forEach(s => {
-    if (PROMOTION_MAP[s.grade]) {
+    if (PROMOTION_MAP[s.grade] && !s.retained) {
       s.grade = PROMOTION_MAP[s.grade];
       // Reset fees for new term cycle (clear paid amounts, keep billed from schedule)
       const newSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {});
@@ -3203,6 +3865,67 @@ function runPromotion(year) {
 
   toast(`🎓 Promotion complete! ${promoted} students promoted, ${graduated} graduated. Active term reset to Term 1.`);
 }
+
+
+// ── Reverse last promotion ────────────────────────────────────
+const REVERSE_PROMOTION_MAP = {
+  'Nursery 1':  'Creche',
+  'Nursery 2':  'Nursery 1',
+  'KG 1':       'Nursery 2',
+  'KG 2':       'KG 1',
+  'Class 1':    'KG 2',
+  'Class 2':    'Class 1',
+  'Class 3':    'Class 2',
+  'Class 4':    'Class 3',
+  'Class 5':    'Class 4',
+  'Class 6':    'Class 5',
+  'JHS Form 1': 'Class 6',
+  'JHS Form 2': 'JHS Form 1',
+  'JHS Form 3': 'JHS Form 2',
+  'Graduated':  'JHS Form 3',
+};
+
+function reversePromotion() {
+  if (!requireAdmin('reverse grade promotion')) return;
+
+  const canReverse = students.filter(s => REVERSE_PROMOTION_MAP[s.grade]).length;
+  const msg = `⚠️ Reverse Grade Promotion\n\n` +
+    `This will move all ${canReverse} students BACK one grade level.\n` +
+    `Graduated students will be moved back to JHS Form 3.\n\n` +
+    `Their fee records will be restored to their previous grade's schedule.\n\n` +
+    `Are you sure you want to continue?`;
+
+  if (!confirm(msg)) return;
+
+  let reversed = 0;
+  students.forEach(s => {
+    const prevGrade = REVERSE_PROMOTION_MAP[s.grade];
+    if (!prevGrade) return;
+    s.grade = prevGrade;
+
+    // Restore fee schedule for previous grade
+    const prevSched = feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {};
+    const isJHS = s.grade.startsWith('JHS');
+    ['Term 1','Term 2','Term 3'].forEach(term => {
+      s.fees[term] = {};
+      FEE_CATS.forEach(cat => {
+        if (cat.jhsOnly && !isJHS) return;
+        const billed = (prevSched[term] && prevSched[term][cat.key]) || 0;
+        s.fees[term][cat.key] = { billed, paid: 0 };
+      });
+    });
+    reversed++;
+  });
+
+  // Clear promotion record so auto-check can run again
+  dbSet('appData/lastPromotion', null);
+
+  save();
+  renderDashboard();
+  renderStudentList();
+  toast(`✅ Reversed! ${reversed} students moved back one grade.`);
+}
+// ─────────────────────────────────────────────────────────────
 
 async function showPromotionPanel() {
   if (!requireAdmin('run grade promotions')) return;
@@ -3307,7 +4030,7 @@ function openBill(studentId, term) {
   if (!s) return;
   const isJHS = s.grade.startsWith('JHS');
   const disc = s.discounts || {};
-  const totalDiscPct = Math.min(100, (disc.advancePct||0) + (disc.familyPct||0));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc));
   const { billed, paid, discAmt } = termTotals(s, term);
   const balance = billed - paid;
   const today = new Date().toLocaleDateString('en-GH', { day:'2-digit', month:'long', year:'numeric' });
@@ -3830,8 +4553,12 @@ async function genReceiptNoAsync() {
   }
 }
 function genReceiptNo() {
-  // Sync fallback using timestamp (used if async not available)
-  return 'REC-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-6);
+  // Local sequential receipt number using stored counter
+  const year = new Date().getFullYear();
+  const key  = 'friaReceiptSeq_' + year;
+  let n = parseInt(sessionStorage.getItem(key) || '0') + 1;
+  sessionStorage.setItem(key, n);
+  return 'REC-' + year + '-' + String(n).padStart(4, '0');
 }
 
 // ─────────────────────────────────────────────
@@ -4295,7 +5022,7 @@ function confirmImport() {
       guardian2: r.guardian2, guardian2Rel: r.guardian2Rel, phone2: r.phone2,
       familyId: r.familyId, studentType: r.studentType,
       scholarship: r.scholarship, scholarNote: r.scholarNote,
-      fees, discounts: { advancePct: 0, familyPct: 0 },
+      fees, discounts: { multiChild10: false, multiChild15: false, promoCode: '', promoDiscPct: 0, siblings: [] },
       paymentLog: [], arrears: {},
       addedOn: new Date().toISOString()
     });
@@ -4805,6 +5532,89 @@ function toast(msg) {
     <div style="display:flex;gap:.8rem;justify-content:flex-end">
       <button class="btn" onclick="closeTransferModal()">Cancel</button>
       <button class="btn btn-primary" id="transfer-confirm-btn" onclick="confirmTransfer()" disabled>✅ Confirm Transfer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAYMENT POPUP MODAL ══ -->
+<div id="pay-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:1.8rem 2rem;width:min(96vw,460px);box-shadow:0 8px 40px rgba(0,0,0,.25)">
+    <h2 style="margin:0 0 .3rem;font-family:'Playfair Display',serif;color:var(--green)">💳 Record Payment</h2>
+    <p id="pay-modal-desc" style="font-size:.84rem;color:var(--gray-3);margin-bottom:1.2rem"></p>
+
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:.8rem">
+      <div>
+        <label>Amount (GH₵) *</label>
+        <input type="number" min="0.01" step="0.01" id="pay-modal-amount" placeholder="0.00"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:1rem;font-weight:700"/>
+      </div>
+      <div>
+        <label>Date *</label>
+        <input type="date" id="pay-modal-date"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+      </div>
+      <div>
+        <label>Payment Type *</label>
+        <select id="pay-modal-method" onchange="toggleMomoRef()"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+          <option value="cash">💵 Cash</option>
+          <option value="momo">📱 Mobile Money (MoMo)</option>
+          <option value="bank">🏦 Bank Transfer</option>
+        </select>
+      </div>
+      <div>
+        <label>Receipt Number *</label>
+        <input type="text" id="pay-modal-receipt" placeholder="e.g. 0042"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+      </div>
+      <div id="pay-modal-momo-row" style="display:none;grid-column:1/-1">
+        <label>MoMo Transaction ID</label>
+        <input type="text" id="pay-modal-momo" placeholder="e.g. MP2504123456"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:.8rem;justify-content:flex-end;margin-top:1.2rem">
+      <button class="btn" onclick="closePayModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="submitPayModal()">✅ Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BUS PAYMENT MODAL ══ -->
+<div id="bus-pay-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:1.8rem 2rem;width:min(96vw,440px);box-shadow:0 8px 40px rgba(0,0,0,.25)">
+    <h2 style="margin:0 0 .3rem;font-family:'Playfair Display',serif;color:var(--green)">🚌 Record Bus Fee Payment</h2>
+    <p id="bus-pay-desc" style="font-size:.84rem;color:var(--gray-3);margin-bottom:1.2rem"></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div>
+        <label>Amount (GH₵) *</label>
+        <input type="number" min="0.01" step="0.01" id="bus-pay-amount" placeholder="0.00"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:1rem;font-weight:700"/>
+      </div>
+      <div>
+        <label>Date *</label>
+        <input type="date" id="bus-pay-date"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+      </div>
+      <div>
+        <label>Payment Type *</label>
+        <select id="bus-pay-method"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+          <option value="cash">💵 Cash</option>
+          <option value="momo">📱 Mobile Money</option>
+          <option value="bank">🏦 Bank Transfer</option>
+        </select>
+      </div>
+      <div>
+        <label>Receipt Number *</label>
+        <input type="text" id="bus-pay-receipt" placeholder="e.g. 0042"
+          style="width:100%;padding:.55rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:.8rem;justify-content:flex-end;margin-top:1.2rem">
+      <button class="btn" onclick="closeBusPayModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="submitBusPayment()">✅ Record Payment</button>
     </div>
   </div>
 </div>
