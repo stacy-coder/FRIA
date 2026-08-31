@@ -2079,14 +2079,10 @@ function save(immediate) {
   if (_saveTimer) clearTimeout(_saveTimer);
   const doSave = async () => {
     try {
-      // ── SAFETY: never overwrite Firebase students with an empty list ──
+      // ── HARD SAFETY: NEVER write 0 students to Firebase under any circumstance ──
       if (students.length === 0) {
-        const existing = await dbGet('appData/students');
-        if (existing && Object.keys(existing).length > 0) {
-          console.warn('Blocked save of 0 students — Firebase still has ' + Object.keys(existing).length + ' students');
-          showSync('⚠ Save blocked — would have deleted all students', true);
-          return;
-        }
+        console.warn('BLOCKED: attempted to save 0 students to Firebase — save cancelled');
+        return; // absolute block — never overwrite with empty
       }
 
       const studentsObj = {};
@@ -3656,11 +3652,15 @@ function forceSync() {
     const badgeEl = document.getElementById('active-term-badge');
     if (termEl)  termEl.value = activeTerm;
     if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
-    renderDashboard();
-    renderStudentList();
-    const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
-    showSync('✓ Refreshed at ' + now + ' — ' + students.length + ' students');
-    toast('✅ ' + students.length + ' students loaded.');
+    if (students.length > 0) {
+      renderDashboard();
+      renderStudentList();
+      const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
+      showSync('✓ Refreshed at ' + now + ' — ' + students.length + ' students');
+      toast('✅ ' + students.length + ' students loaded.');
+    } else {
+      toast('⚠️ No students returned from server — keeping existing data.');
+    }
   }).catch(err => {
     showSync('⚠ Refresh failed', true);
     toast('⚠️ Could not refresh: ' + err.message);
