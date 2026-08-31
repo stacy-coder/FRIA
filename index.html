@@ -3747,45 +3747,51 @@ function showSync(msg, isError) {
 
 function forceSync() {
   try { showSync('Refreshing…'); } catch(e) {}
-  // Show a spinner on the button
   const btn = document.querySelector('[onclick="forceSync()"]');
   if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
 
   db.ref('appData').once('value').then(snapshot => {
+    if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; }
     const data = snapshot.val();
 
-    if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; }
-
     if (!data) {
-      alert('No data found in Firebase database. Please contact your system admin.');
+      alert('Firebase returned no data at all.\n\nThis means either:\n1. The database is empty — re-import students from the Import tab\n2. Firebase rules are blocking this user — check Firebase console rules');
       return;
     }
 
-    if (data.students) {
-      const incoming = Object.values(data.students).filter(s => s && s.id && s.name);
-      if (incoming.length > 0) {
-        students = incoming;
-        feeSchedule = data.feeSchedule || feeSchedule;
-        activeTerm  = data.activeTerm || activeTerm;
-        storeProducts = data.storeProducts ? Object.values(data.storeProducts) : storeProducts;
-        storeSales    = data.storeSales    ? Object.values(data.storeSales)    : storeSales;
-        const termEl  = document.getElementById('global-term');
-        const badgeEl = document.getElementById('active-term-badge');
-        if (termEl)  termEl.value = activeTerm;
-        if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
-        renderDashboard();
-        renderStudentList();
-        try { showSync('✓ ' + students.length + ' students'); } catch(e) {}
-        alert('✅ ' + students.length + ' students loaded successfully!');
-      } else {
-        alert('Firebase returned 0 students. The database may be empty — please re-import the student CSV.');
-      }
-    } else {
-      alert('No students found in database. Please re-import the student CSV file.');
+    // Count students from Firebase directly
+    const fbStudents = data.students ? Object.keys(data.students).length : 0;
+    const fbBackup   = data.backup && data.backup.students ? Object.keys(data.backup.students).length : 0;
+
+    alert('Firebase report:\n- Main students: ' + fbStudents + '\n- Backup students: ' + fbBackup + '\n- Has feeSchedule: ' + (!!data.feeSchedule) + '\n\n' + (fbStudents > 0 ? 'Loading ' + fbStudents + ' students now...' : 'Database is EMPTY — please re-import CSV'));
+
+    if (fbStudents > 0) {
+      students = Object.values(data.students).filter(s => s && s.id && s.name);
+    } else if (fbBackup > 0) {
+      students = Object.values(data.backup.students).filter(s => s && s.id && s.name);
+      // Restore to main node
+      const r = {}; students.forEach(s => r[s.id] = s);
+      db.ref('appData/students').set(r);
+    }
+
+    if (data.feeSchedule) feeSchedule = data.feeSchedule;
+    activeTerm = data.activeTerm || activeTerm;
+    storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
+    storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
+
+    const termEl  = document.getElementById('global-term');
+    const badgeEl = document.getElementById('active-term-badge');
+    if (termEl)  termEl.value = activeTerm;
+    if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
+
+    if (students.length > 0) {
+      renderDashboard();
+      renderStudentList();
+      try { showSync('✓ ' + students.length + ' students'); } catch(e) {}
     }
   }).catch(err => {
     if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; }
-    alert('❌ Error: ' + err.message + '\n\nThis may be a Firebase rules issue. Please check your Firebase database rules.');
+    alert('Firebase error: ' + err.message + '\nCode: ' + (err.code || 'unknown'));
   });
 }
 
