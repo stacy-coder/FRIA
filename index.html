@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <title>Faith Root International Academy — Student Accounts</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -875,6 +878,8 @@
     <span id="header-username">—</span>
     <span style="opacity:.6;font-size:.7rem" id="header-role"></span>
   </div>
+  <button onclick="forceSync()" title="Refresh data from server"
+    style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:.3rem .8rem;border-radius:20px;font-size:.76rem;font-weight:600;cursor:pointer;margin-right:.4rem">🔄 Refresh</button>
   <button onclick="doLogout()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:#fff;padding:.3rem .8rem;border-radius:20px;font-size:.76rem;font-weight:600;cursor:pointer" title="Sign out">Sign Out</button>
 </header>
 
@@ -1915,44 +1920,53 @@ let _saveTimer  = null;
 // Real-time listener — keeps all users in sync automatically
 let _appDataListener = null;
 
-function startRealtimeSync() {
-  // Remove any existing listener first
-  if (_appDataListener) {
-    db.ref('appData').off('value', _appDataListener);
+function applyAppData(data) {
+  if (!data) return;
+  if (data.students) {
+    students = Object.values(data.students).filter(s => s && s.id && s.name);
+  } else {
+    students = [];
   }
+  feeSchedule   = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0)
+                  ? data.feeSchedule
+                  : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
+  activeTerm    = data.activeTerm || 'Term 3';
+  storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
+  storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
 
-  _appDataListener = db.ref('appData').on('value', (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-      // Convert Firebase objects back to arrays
-      if (data.students) {
-        students = Object.values(data.students).filter(s => s && s.id && s.name);
-      } else {
-        students = [];
-      }
-      feeSchedule   = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0)
-                      ? data.feeSchedule
-                      : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
-      activeTerm    = data.activeTerm || 'Term 3';
-      storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
-      storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
+  const termEl  = document.getElementById('global-term');
+  const badgeEl = document.getElementById('active-term-badge');
+  if (termEl)  termEl.value = activeTerm;
+  if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
 
-      // Update UI elements that depend on activeTerm
-      const termEl = document.getElementById('global-term');
-      const badgeEl = document.getElementById('active-term-badge');
-      if (termEl) termEl.value = activeTerm;
-      if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
+  renderDashboard();
+  if (document.getElementById('tab-students')?.classList.contains('active')) {
+    renderStudentList();
+  }
+}
 
-      // Refresh visible screens
-      renderDashboard();
-      if (document.getElementById('tab-students')?.classList.contains('active')) {
-        renderStudentList();
-      }
+function startRealtimeSync() {
+  // Detach any existing listener
+  try { db.ref('appData').off('value'); } catch(e) {}
+
+  // Attach real-time listener
+  db.ref('appData').on('value',
+    (snapshot) => {
+      applyAppData(snapshot.val());
+      const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
+      showSync(`✓ Live — synced ${now}`);
+    },
+    (error) => {
+      console.error('Firebase sync error:', error);
+      const msg = error?.code === 'PERMISSION_DENIED'
+        ? '⚠ Permission denied — check Firebase rules'
+        : '⚠ Sync error — try refreshing';
+      showSync(msg, true);
+      toast('⚠️ ' + (error?.code === 'PERMISSION_DENIED'
+        ? 'Firebase rules are blocking data access. Admin needs to update database rules.'
+        : 'Connection error. Click 🔄 Refresh to try again.'));
     }
-  }, (error) => {
-    console.error('Firebase sync error:', error);
-    showSync('⚠ Connection error — data may be out of date', true);
-  });
+  );
 }
 
 async function loadAllData() {
@@ -2144,6 +2158,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch(e) {
           console.error('Auth state error:', e);
           hideLoading();
+          // Show visible error so we can diagnose
+          const errMsg = e?.code === 'PERMISSION_DENIED'
+            ? '⚠️ Access denied by database rules. Ask your admin to check Firebase security rules.'
+            : `⚠️ Could not load data: ${e?.message || e}. Try refreshing the page.`;
+          document.getElementById('loading-msg').textContent = errMsg;
+          document.getElementById('loading-overlay').classList.remove('hidden');
+          document.getElementById('loading-overlay').style.cursor = 'pointer';
+          document.getElementById('loading-overlay').onclick = () => location.reload();
         }
         return;
       }
@@ -3161,13 +3183,14 @@ const SCHOOL_TEL   = '0240204106';
 const SCHOOL_MOMO  = '0597435300';
 const SCHOOL_MOTTO = 'ROOTED AND ESTABLISHED IN LOVE';
 
-// Academic year runs Sept → Aug. e.g. Sept 2026–Aug 2027 = "2026/2027"
+// Academic year runs Aug → Jul. e.g. Aug 2026–Jul 2027 = "2026/2027"
+// (Promotion happens Aug 1st so the new year starts from August)
 function getAcademicYear(date) {
   const d = date || new Date();
-  const month = d.getMonth(); // 0=Jan … 8=Sept
+  const month = d.getMonth(); // 0=Jan … 7=Aug
   const year  = d.getFullYear();
-  // If Sept (8) or later → new academic year has started
-  const startYear = month >= 8 ? year : year - 1;
+  // If Aug (7) or later → new academic year has started
+  const startYear = month >= 7 ? year : year - 1;
   return `${startYear}/${startYear + 1}`;
 }
 
@@ -3416,6 +3439,19 @@ function downloadMonthlyBillsXLSX() {
 }
 
 // ─────────────────────────────────────────────────────────────
+
+function forceSync() {
+  showSync('Refreshing…');
+  dbGet('appData').then(data => {
+    applyAppData(data);
+    const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
+    showSync(`✓ Refreshed at ${now}`);
+    toast('✅ Data refreshed from server.');
+  }).catch(err => {
+    showSync('⚠ Refresh failed', true);
+    toast('⚠️ Could not refresh — check your connection.');
+  });
+}
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
   const btn = document.getElementById('owing-toggle');
