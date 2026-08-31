@@ -2004,11 +2004,37 @@ function startRealtimeSync() {
   try { db.ref('appData').off('value'); } catch(e) {}
 
   // Attach real-time listener
+  // Force a fresh read first before attaching listener
+  db.ref('appData').once('value').then(snap => {
+    const d = snap.val();
+    if (d && d.students) {
+      students = Object.values(d.students).filter(s => s && s.id && s.name);
+      renderDashboard();
+      if (document.getElementById('tab-students')?.classList.contains('active')) renderStudentList();
+    }
+  });
+
   db.ref('appData').on('value',
     (snapshot) => {
-      applyAppData(snapshot.val());
-      const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
-      showSync(`✓ Live — synced ${now}`);
+      const data = snapshot.val();
+      if (data && data.students) {
+        const incoming = Object.values(data.students).filter(s => s && s.id && s.name);
+        if (incoming.length > 0) {
+          students = incoming;
+          feeSchedule = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0) ? data.feeSchedule : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
+          activeTerm  = data.activeTerm || 'Term 3';
+          storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
+          storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
+          const termEl  = document.getElementById('global-term');
+          const badgeEl = document.getElementById('active-term-badge');
+          if (termEl)  termEl.value = activeTerm;
+          if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
+          renderDashboard();
+          if (document.getElementById('tab-students')?.classList.contains('active')) renderStudentList();
+          const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
+          showSync('✓ Live — synced ' + now + ' (' + students.length + ' students)');
+        }
+      }
     },
     (error) => {
       console.error('Firebase sync error:', error);
@@ -3602,14 +3628,31 @@ function downloadMonthlyBillsXLSX() {
 
 function forceSync() {
   showSync('Refreshing…');
-  dbGet('appData').then(data => {
-    applyAppData(data);
+  db.ref('appData').once('value').then(snapshot => {
+    const data = snapshot.val();
+    if (!data) { toast('⚠️ No data found in database.'); return; }
+    if (data.students) {
+      const incoming = Object.values(data.students).filter(s => s && s.id && s.name);
+      if (incoming.length > 0) {
+        students = incoming;
+      }
+    }
+    if (data.feeSchedule) feeSchedule = data.feeSchedule;
+    activeTerm    = data.activeTerm || 'Term 3';
+    storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
+    storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
+    const termEl  = document.getElementById('global-term');
+    const badgeEl = document.getElementById('active-term-badge');
+    if (termEl)  termEl.value = activeTerm;
+    if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
+    renderDashboard();
+    renderStudentList();
     const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
-    showSync(`✓ Refreshed at ${now}`);
-    toast('✅ Data refreshed from server.');
+    showSync('✓ Refreshed at ' + now + ' — ' + students.length + ' students');
+    toast('✅ ' + students.length + ' students loaded.');
   }).catch(err => {
     showSync('⚠ Refresh failed', true);
-    toast('⚠️ Could not refresh — check your connection.');
+    toast('⚠️ Could not refresh: ' + err.message);
   });
 }
 
