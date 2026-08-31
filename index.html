@@ -2152,10 +2152,20 @@ async function loadAllData() {
   // Do a one-time read first to get initial data quickly
   const data = await dbGet('appData');
   if (data) {
-    if (data.students) {
+    if (data.students && Object.keys(data.students).length > 0) {
       students = Object.values(data.students).filter(s => s && s.id && s.name);
     } else {
-      students = [];
+      // Main students node empty — restore from backup automatically
+      if (data.backup && data.backup.students && Object.keys(data.backup.students).length > 0) {
+        students = Object.values(data.backup.students).filter(s => s && s.id && s.name);
+        // Restore back to main node
+        const restoreObj = {};
+        students.forEach(s => { restoreObj[s.id] = s; });
+        db.ref('appData/students').set(restoreObj);
+        console.log('Auto-restored ' + students.length + ' students from backup');
+      } else {
+        students = [];
+      }
     }
     feeSchedule   = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0)
                     ? data.feeSchedule
@@ -2203,12 +2213,15 @@ function save(immediate) {
       sessionStorage.setItem('friaLastSaveCount', students.length);
       showSync('✓ Saved — ' + students.length + ' students');
 
-      // Auto-backup: keep a timestamped snapshot of student IDs for recovery
+      // Auto-backup: save FULL student data to separate protected node
       if (students.length > 0) {
+        const backupObj = {};
+        students.forEach(s => { backupObj[s.id] = s; });
         db.ref('appData/backup').update({
           studentCount: students.length,
           lastSaved: new Date().toISOString(),
-          savedBy: currentUser?.name || 'unknown'
+          savedBy: currentUser?.name || 'unknown',
+          students: backupObj
         });
       }
     } catch(err) {
