@@ -869,7 +869,7 @@
   <h1>Faith Root International Academy
     <span>Student Account Management System &nbsp;·&nbsp; Accra, Ghana</span>
   </h1>
-  <div class="term-badge" id="active-term-badge">Term 1</div>
+  <div class="term-badge" id="active-term-badge">Term 3 — 2026/2027</div>
   <div class="user-badge" title="Signed in with Google">
     <span class="role-dot" id="header-role-dot"></span>
     <span id="header-username">—</span>
@@ -906,7 +906,7 @@
     <div class="summary-strip" id="dash-summary"></div>
 
     <div class="card">
-      <h2>📌 Outstanding Balances — <span id="dash-term-label">Term 1</span></h2>
+      <h2>📌 Outstanding Balances — <span id="dash-term-label">Term 3 — 2026/2027</span></h2>
       <div id="dash-outstanding"></div>
     </div>
   </div>
@@ -1941,7 +1941,7 @@ function startRealtimeSync() {
       const termEl = document.getElementById('global-term');
       const badgeEl = document.getElementById('active-term-badge');
       if (termEl) termEl.value = activeTerm;
-      if (badgeEl) badgeEl.textContent = activeTerm;
+      if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
 
       // Refresh visible screens
       renderDashboard();
@@ -1974,7 +1974,7 @@ async function loadAllData() {
   const termEl = document.getElementById('global-term');
   const badgeEl = document.getElementById('active-term-badge');
   if (termEl) termEl.value = activeTerm;
-  if (badgeEl) badgeEl.textContent = activeTerm;
+  if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
 
   // Then start listening for real-time changes
   startRealtimeSync();
@@ -2047,6 +2047,9 @@ function showTab(id) {
 // ─────────────────────────────────────────────
 function setActiveTerm(t) {
   activeTerm = t;
+  // Update badge with academic year
+  const badge = document.getElementById('active-term-badge');
+  if (badge) badge.textContent = termWithYear(t);
   document.getElementById('active-term-badge').textContent = t;
   document.getElementById('global-term').value = t;
   save(); // will write activeTerm to Firebase via debounced save
@@ -3158,9 +3161,26 @@ const SCHOOL_TEL   = '0240204106';
 const SCHOOL_MOMO  = '0597435300';
 const SCHOOL_MOTTO = 'ROOTED AND ESTABLISHED IN LOVE';
 
-function getAcademicYear() {
-  const y = new Date().getFullYear();
-  return `${y}/${y+1}`;
+// Academic year runs Sept → Aug. e.g. Sept 2026–Aug 2027 = "2026/2027"
+function getAcademicYear(date) {
+  const d = date || new Date();
+  const month = d.getMonth(); // 0=Jan … 8=Sept
+  const year  = d.getFullYear();
+  // If Sept (8) or later → new academic year has started
+  const startYear = month >= 8 ? year : year - 1;
+  return `${startYear}/${startYear + 1}`;
+}
+
+// Short form e.g. "26/27"
+function getAcademicYearShort(date) {
+  const full = getAcademicYear(date);
+  const parts = full.split('/');
+  return `${parts[0].slice(-2)}/${parts[1].slice(-2)}`;
+}
+
+// e.g. "Term 1 — 2026/2027"
+function termWithYear(term, date) {
+  return `${term} — ${getAcademicYear(date)}`;
 }
 
 function termOrdinal(term) {
@@ -3169,7 +3189,7 @@ function termOrdinal(term) {
 
 // ── Term Bills XLSX ───────────────────────────────────────────
 function getTermBillData(grade, term) {
-  const academicYear = (() => { const y = new Date().getFullYear(); return `${y}/${y+1}`; })();
+  const academicYear = getAcademicYear();
   const filtered = students
     .filter(s => s.grade !== 'Graduated' && (grade === 'ALL' || s.grade === grade))
     .sort((a,b) => {
@@ -3201,7 +3221,7 @@ function downloadTermBillsXLSX() {
 
   const reopening   = document.getElementById('class-bill-reopening')?.value || '';
   const termOrd     = {'Term 1':'1ST','Term 2':'2ND','Term 3':'3RD'}[term] || term;
-  const acYear      = (() => { const y = new Date().getFullYear(); return y + '/' + (y+1); })();
+  const acYear = getAcademicYear();
   const GREEN = "1B5E20", LGREEN = "E8F5E9", WHITE = "FFFFFF", GRAY = "757575";
 
   const filtered = students
@@ -3293,7 +3313,7 @@ Tel: 0240204106`);
   });
 
   const termLabel = term.replace(' ','_');
-  XLSX.writeFile(wb, `FRIA_Term_Bills_${termLabel}_${acYear.replace('/','_')}.xlsx`);
+  XLSX.writeFile(wb, `FRIA_Term_Bills_${termLabel}_${getAcademicYearShort().replace('/','_')}.xlsx`);
   toast('✅ Term bills downloaded! One sheet per student.');
 }
 
@@ -3391,7 +3411,7 @@ function downloadMonthlyBillsXLSX() {
     XLSX.utils.book_append_sheet(wb, ws, sname);
   });
 
-  XLSX.writeFile(wb, `FRIA_Monthly_Bills_${month}_${term.replace(' ','_')}.xlsx`);
+  XLSX.writeFile(wb, `FRIA_Monthly_Bills_${month}_${term.replace(' ','_')}_${getAcademicYearShort().replace('/','_')}.xlsx`);
   toast('✅ Monthly bills downloaded! One sheet per class.');
 }
 
@@ -4150,7 +4170,7 @@ function deleteStudent(id) {
 // ─────────────────────────────────────────────
 function renderDashboard() {
   const term = activeTerm;
-  document.getElementById('dash-term-label').textContent = term;
+  document.getElementById('dash-term-label').textContent = termWithYear(term);
 
   let totalBilled = 0, totalPaid = 0, countOwing = 0;
   students.forEach(s => {
@@ -4453,7 +4473,7 @@ function renderDailyReport() {
 
 function printDailyReport() {
   const date = document.getElementById('daily-report-date')?.value || '';
-  document.title = `Daily Payments Report — ${date}`;
+  document.title = `Daily Payments Report — ${date} (${getAcademicYear()})`;
   window.print();
 }
 
@@ -4558,7 +4578,7 @@ function runPromotion(year) {
   // Reset active term to Term 1
   activeTerm = 'Term 1';
   document.getElementById('global-term').value = 'Term 1';
-  document.getElementById('active-term-badge').textContent = 'Term 1';
+  document.getElementById('active-term-badge').textContent = termWithYear('Term 1');
 
   // Record promotion timestamp
   dbSet('appData/lastPromotion', {
