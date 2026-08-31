@@ -2192,15 +2192,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } catch(e) {
           console.error('Auth state error:', e);
+          // Always let the user into the app — show error as toast, not blocking screen
           hideLoading();
-          // Show visible error so we can diagnose
-          const errMsg = e?.code === 'PERMISSION_DENIED'
-            ? '⚠️ Access denied by database rules. Ask your admin to check Firebase security rules.'
-            : `⚠️ Could not load data: ${e?.message || e}. Try refreshing the page.`;
-          document.getElementById('loading-msg').textContent = errMsg;
-          document.getElementById('loading-overlay').classList.remove('hidden');
-          document.getElementById('loading-overlay').style.cursor = 'pointer';
-          document.getElementById('loading-overlay').onclick = () => location.reload();
+          document.getElementById('auth-screen').classList.add('hidden');
+          renderDashboard();
+          // Show helpful error message
+          const isPermission = e?.message?.includes('PERMISSION_DENIED') || e?.code === 'PERMISSION_DENIED';
+          if (isPermission) {
+            setTimeout(() => toast('⚠️ Firebase permission denied — data could not load. Please update your Firebase database rules. Contact your system admin.'), 500);
+          } else {
+            setTimeout(() => toast('⚠️ Could not load data: ' + (e?.message || 'Unknown error') + '. Click 🔄 Refresh to try again.'), 500);
+          }
         }
         return;
       }
