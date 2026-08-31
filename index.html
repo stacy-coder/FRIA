@@ -1212,6 +1212,11 @@
           </select>
         </div>
         <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Re-opening Date</label>
+          <input type="text" id="class-bill-reopening" placeholder="e.g. 07/09/2026"
+            style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem;width:140px"/>
+        </div>
+        <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Month (if monthly)</label>
           <select id="class-bill-month" style="padding:.45rem .8rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
             <option>January</option><option>February</option><option>March</option>
@@ -1221,9 +1226,11 @@
           </select>
         </div>
       </div>
-      <div style="display:flex;gap:.8rem">
+      <div style="display:flex;gap:.8rem;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="previewClassBills()">👁 Preview</button>
-        <button class="btn btn-export" onclick="printClassBills()">🖨️ Print</button>
+        <button class="btn btn-export" onclick="printClassBills()">🖨️ Print Bills</button>
+        <button class="btn btn-gold" onclick="downloadTermBillsXLSX()">📥 Download Term Bills (.xlsx)</button>
+        <button class="btn btn-gold" onclick="downloadMonthlyBillsXLSX()">📥 Download Monthly Bills (.xlsx)</button>
       </div>
       <div id="class-bills-preview" style="margin-top:1.2rem"></div>
     </div>
@@ -3073,6 +3080,253 @@ function printClassBills() {
 }
 
 // ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// EXCEL BILL GENERATORS  (uses SheetJS / XLSX library)
+// ══════════════════════════════════════════════════════════════
+
+const SCHOOL_TEL   = '0240204106';
+const SCHOOL_MOMO  = '0597435300';
+const SCHOOL_MOTTO = 'ROOTED AND ESTABLISHED IN LOVE';
+
+function getAcademicYear() {
+  const y = new Date().getFullYear();
+  return `${y}/${y+1}`;
+}
+
+function termOrdinal(term) {
+  return { 'Term 1':'1ST', 'Term 2':'2ND', 'Term 3':'3RD' }[term] || term;
+}
+
+// ── Term Bills XLSX ───────────────────────────────────────────
+function getTermBillData(grade, term) {
+  const academicYear = (() => { const y = new Date().getFullYear(); return `${y}/${y+1}`; })();
+  const filtered = students
+    .filter(s => s.grade !== 'Graduated' && (grade === 'ALL' || s.grade === grade))
+    .sort((a,b) => {
+      const ai = GRADE_SORT_ORDER.indexOf(a.grade);
+      const bi = GRADE_SORT_ORDER.indexOf(b.grade);
+      return ai !== bi ? ai - bi : a.name.localeCompare(b.name);
+    })
+    .map(s => {
+      const { billed, paid } = termTotals(s, term);
+      return { ...s, termBilled: billed, termPaid: paid, termBalance: Math.max(0, billed - paid) };
+    });
+  return {
+    students: filtered, term,
+    academicYear,
+    reopening: document.getElementById('class-bill-reopening')?.value || '',
+    tel: '0240204106', momo: '0597435300',
+    feeSchedule: feeSchedule,
+    defaultFeeSchedule: DEFAULT_FEE_SCHEDULE,
+    feeCats: FEE_CATS,
+    grade
+  };
+}
+
+function downloadTermBillsXLSX() {
+  const grade    = document.getElementById('class-bill-grade')?.value || 'ALL';
+  const term     = document.getElementById('class-bill-term')?.value  || activeTerm;
+
+  if (typeof XLSX === 'undefined') return toast('⚠️ Spreadsheet library not loaded.');
+
+  const reopening   = document.getElementById('class-bill-reopening')?.value || '';
+  const termOrd     = {'Term 1':'1ST','Term 2':'2ND','Term 3':'3RD'}[term] || term;
+  const acYear      = (() => { const y = new Date().getFullYear(); return y + '/' + (y+1); })();
+  const GREEN = "1B5E20", LGREEN = "E8F5E9", WHITE = "FFFFFF", GRAY = "757575";
+
+  const filtered = students
+    .filter(s => s.grade !== 'Graduated' && (grade === 'ALL' || s.grade === grade))
+    .sort((a,b) => {
+      const ai = GRADE_SORT_ORDER.indexOf(a.grade), bi = GRADE_SORT_ORDER.indexOf(b.grade);
+      return ai !== bi ? ai - bi : a.name.localeCompare(b.name);
+    });
+
+  if (!filtered.length) return toast('⚠️ No students found.');
+
+  const wb = XLSX.utils.book_new();
+
+  filtered.forEach(s => {
+    if (s.grade === 'Graduated') return;
+    const disc    = s.discounts || {};
+    const discPct = disc.multiChild15 ? 15 : disc.multiChild10 ? 10 : 0;
+    const isJHS   = s.grade.startsWith('JHS');
+    const gSched  = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
+    const fTerm   = s.fees?.[term] || {};
+
+    // Build rows matching the template layout exactly
+    const rows = [];
+    const push = (b, c) => rows.push({b: b||'', c: c||''});
+
+    // Rows 1-7: header block (merged in template)
+    push(`FAITH ROOTS INTERNATIONAL ACADEMY
+FRIA
+Tel: 0240204106`);
+    push(''); push(''); push(''); push(''); push(''); push('');
+    // Row 8: Motto
+    push('   ROOTED AND ESTABLISHED IN LOVE');
+    push(''); push('');
+    // Row 11: STUDENT BILL
+    push('STUDENT BILL');
+    push('');
+    // Row 13: Name + ID + Year
+    push(`Name:   ${s.name}     Student ID:${s.id}      Academic Year: ${acYear}`);
+    push('');
+    // Row 15: Class + Status + Term
+    push(`Class:  ${s.grade}                    Status:   DAY                    Term: ${termOrd} TERM`);
+    push(''); push('');
+    // Row 18: Reopening
+    push(`Re-opening: ${reopening}`);
+    push(''); push('');
+    // Row 21: Fee table header
+    push('ITEM', 'AMOUNT ( GH₵)');
+
+    let feeStart = rows.length + 1;
+    let total = 0;
+    FEE_CATS.forEach(cat => {
+      if (cat.jhsOnly && !isJHS) return;
+      if (s.cormKid) return;
+      if (s.fullSponsor && cat.key === 'tuition') return;
+      const entry = fTerm[cat.key];
+      let billed = (entry && entry.billed != null) ? entry.billed : (gSched[cat.key] || 0);
+      if (!billed) return;
+      let lbl = cat.label;
+      if (discPct > 0 && cat.key === 'tuition') {
+        billed = Math.round(billed * (1 - discPct/100) * 100) / 100;
+        lbl = `${lbl}  (${discPct}% scholarship)`;
+      }
+      total += billed;
+      push(lbl, billed);
+    });
+    let feeEnd = rows.length;
+
+    // BILL TOTAL
+    push('BILL TOTAL', total);
+    push(''); 
+    // NOTE
+    push('NOTE');
+    push(`a. ${termOrd} FEE PAYMENT IS DUE ${reopening}`);
+    push('b. LATE FEE CHARGE IS GH₵ 50.00');
+    push('c. All outstanding arrears from previous term must be settled on day of reopening');
+    push(`d. MOMO: 0597435300 / CALL No. 0240204106`);
+    push('');
+    push('...................................…..........................................');
+
+    // Convert to aoa
+    const aoa = rows.map(r => ['', r.b, r.c]);
+    const ws  = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:3},{wch:42},{wch:16}];
+
+    const sname = (s.name || 'Student').slice(0,31);
+    const existing = wb.SheetNames || [];
+    const title = existing.includes(sname) ? sname.slice(0,28) + wb.SheetNames.length : sname;
+    XLSX.utils.book_append_sheet(wb, ws, title);
+  });
+
+  const termLabel = term.replace(' ','_');
+  XLSX.writeFile(wb, `FRIA_Term_Bills_${termLabel}_${acYear.replace('/','_')}.xlsx`);
+  toast('✅ Term bills downloaded! One sheet per student.');
+}
+
+// ── Monthly Bills XLSX ────────────────────────────────────────
+function downloadMonthlyBillsXLSX() {
+  const grade = document.getElementById('class-bill-grade')?.value || 'ALL';
+  const term  = document.getElementById('class-bill-term')?.value  || activeTerm;
+  const month = document.getElementById('class-bill-month')?.value || '';
+
+  if (typeof XLSX === 'undefined') return toast('⚠️ Spreadsheet library not loaded.');
+
+  // Determine all 3 months of this term from the selected month
+  const allMonths = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+  const mIdx = allMonths.indexOf(month);
+  // Use selected month + next 2 as the term months (or fallback to month only)
+  const termMonths = mIdx >= 0 ? [allMonths[mIdx], allMonths[mIdx+1]||'', allMonths[mIdx+2]||''].filter(Boolean)
+                                : [month];
+
+  const filtered = students
+    .filter(s => s.grade !== 'Graduated' && (grade === 'ALL' || s.grade === grade))
+    .sort((a,b) => {
+      const ai = GRADE_SORT_ORDER.indexOf(a.grade), bi = GRADE_SORT_ORDER.indexOf(b.grade);
+      return ai !== bi ? ai - bi : a.name.localeCompare(b.name);
+    });
+
+  if (!filtered.length) return toast('⚠️ No students found.');
+
+  const byGrade = {};
+  filtered.forEach(s => {
+    if (!byGrade[s.grade]) byGrade[s.grade] = [];
+    byGrade[s.grade].push(s);
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  GRADE_SORT_ORDER.filter(g => byGrade[g]).forEach(gradeKey => {
+    const gradeStudents = byGrade[gradeKey];
+    const sname = gradeKey.replace('JHS Form ','JHS').replace('Class ','Cls ').slice(0,31);
+    const aoa   = [];
+
+    // Track running balances across months
+    const prevBal = {};
+    gradeStudents.forEach(s => { prevBal[s.id] = 0; });
+
+    termMonths.forEach((mo, mi) => {
+      const prevMo = mi === 0 ? 'Prior' : termMonths[mi-1].slice(0,3).toUpperCase();
+      const moAbbr = mo.slice(0,3).toUpperCase();
+
+      // Month header row (merged in template)
+      aoa.push([mo.toUpperCase(), '', '', '', '', '', '', '']);
+      // Column headers
+      aoa.push(['', `Owing ${prevMo}`, `${term} School Fees`, 'TOTAL BILL',
+                `${moAbbr} PAYMENT`, 'Monthly Fees Paid', 'Monthly Balance', 'Term BALANCE']);
+      // GHS row
+      aoa.push(['', 'GHS', 'GHS', 'GHS', 'GHS', 'GHS', '', 'GHS']);
+
+      gradeStudents.forEach(s => {
+        const { billed } = termTotals(s, term);
+        const instalment = Math.round(billed / 3 * 100) / 100;
+        const owing_prev = prevBal[s.id] || 0;
+
+        // Payments this month
+        const monthPaid = (s.paymentLog || [])
+          .filter(p => p.term === term && p.date &&
+            new Date(p.date).toLocaleString('en',{month:'long'}) === mo)
+          .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        const totalBill   = owing_prev + billed;
+        const monthlyBal  = Math.round((instalment - monthPaid) * 100) / 100;
+        const { paid }    = termTotals(s, term);
+        const termBalance = Math.max(0, billed - paid);
+
+        aoa.push([
+          s.name,
+          owing_prev || '',
+          billed,
+          totalBill,
+          instalment,
+          monthPaid,
+          monthlyBal,
+          termBalance,
+        ]);
+
+        prevBal[s.id] = monthlyBal;
+      });
+
+      // Gap between months
+      aoa.push(['', '', '', '', '', '', '', '']);
+      aoa.push(['', '', '', '', '', '', '', '']);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:38},{wch:15},{wch:16},{wch:12},{wch:13},{wch:17},{wch:16},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, ws, sname);
+  });
+
+  XLSX.writeFile(wb, `FRIA_Monthly_Bills_${month}_${term.replace(' ','_')}.xlsx`);
+  toast('✅ Monthly bills downloaded! One sheet per class.');
+}
+
+// ─────────────────────────────────────────────────────────────
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
   const btn = document.getElementById('owing-toggle');
@@ -3241,12 +3495,20 @@ function renderDetail(id) {
       ${s.cormKid     ? `<span class="discount-badge" style="margin-left:.4rem;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7">🏠 CORM Kid</span>` : ''}
       ${s.fullSponsor ? `<span class="discount-badge" style="margin-left:.4rem;background:#fff8e1;color:#f57f17;border:1px solid #ffe082">✨ Fully Sponsored</span>` : ''}
     </h2>
-    <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:.86rem;color:var(--gray-3);margin-bottom:1.2rem">
+    <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.85rem;color:var(--gray-3);margin-bottom:1rem">
       <span><strong>Grade:</strong> ${s.grade}</span>
       <span><strong>ID:</strong> ${s.id}</span>
-      ${s.guardian ? `<span><strong>${s.guardianRel||'Guardian'}:</strong> ${s.guardian}${s.phone?' · '+s.phone:''}</span>` : ''}
-      ${s.guardian2 ? `<span><strong>${s.guardian2Rel||'2nd Guardian'}:</strong> ${s.guardian2}${s.phone2?' · '+s.phone2:''}</span>` : ''}
-      ${s.familyId ? `<span><strong>Family ID:</strong> ${s.familyId} ${familySiblings>0?`(${familySiblings} sibling${familySiblings>1?'s':''} enrolled)`:''}</span>` : ''}
+      ${s.gender ? `<span><strong>Gender:</strong> ${s.gender}</span>` : ''}
+      ${s.dob ? `<span><strong>DOB:</strong> ${s.dob}</span>` : ''}
+      ${s.nationality ? `<span><strong>Nationality:</strong> ${s.nationality}</span>` : ''}
+      ${s.religion ? `<span><strong>Religion:</strong> ${s.religion}</span>` : ''}
+      ${s.areaOfResidence ? `<span><strong>Area:</strong> ${s.areaOfResidence}</span>` : ''}
+      ${s.dateOfAdmission ? `<span><strong>Admitted:</strong> ${s.dateOfAdmission}</span>` : ''}
+      ${s.previousId ? `<span style="color:#bbb"><strong>Prev ID:</strong> ${s.previousId}</span>` : ''}
+    </div>
+    <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.85rem;color:var(--gray-3);margin-bottom:1.2rem">
+      ${s.guardian ? `<span><strong>${s.guardianRel||'Father/Guardian'}:</strong> ${s.guardian}${s.phone?' &nbsp; 📞 '+s.phone:''}</span>` : ''}
+      ${s.guardian2 ? `<span><strong>${s.guardian2Rel||'Mother/Guardian'}:</strong> ${s.guardian2}${s.phone2?' &nbsp; 📞 '+s.phone2:''}</span>` : ''}
     </div>
 
     <!-- DISCOUNT PANEL -->
@@ -5205,39 +5467,51 @@ function showColumnMapper() {
   document.getElementById('import-mapping-card').style.display = 'block';
   document.getElementById('detected-cols').textContent = importHeaders.join(', ');
 
-  // Fields we want to map
+  // Fields we want to map — matches FRIA Master Student Database xlsx
   const fields = [
-    { key: 'name',        label: 'Full Name *',        required: true  },
-    { key: 'grade',       label: 'Grade Level *',       required: true  },
-    { key: 'guardian',     label: 'Guardian Name',            required: false },
-    { key: 'guardianRel',  label: 'Guardian Relationship',    required: false },
-    { key: 'phone',        label: 'Guardian Phone',           required: false },
-    { key: 'guardian2',    label: '2nd Guardian Name',        required: false },
-    { key: 'guardian2Rel', label: '2nd Guardian Relationship',required: false },
-    { key: 'phone2',       label: '2nd Guardian Phone',       required: false },
-    { key: 'id',          label: 'Student ID',          required: false },
-    // studentType removed — all students are day students
-    { key: 'familyId',    label: 'Family ID',           required: false },
-    { key: 'scholarship', label: 'Scholarship Amount',  required: false },
-    { key: 'scholarNote', label: 'Scholarship Note',    required: false },
+    { key: 'surname',      label: 'Surname *',                required: true  },
+    { key: 'firstName',    label: 'First Name *',             required: true  },
+    { key: 'otherNames',   label: 'Other Names',              required: false },
+    { key: 'id',           label: 'Student ID (FRIA/YY/###)', required: false },
+    { key: 'grade',        label: 'Class / Grade *',          required: true  },
+    { key: 'gender',       label: 'Gender',                   required: false },
+    { key: 'dob',          label: 'Date of Birth',            required: false },
+    { key: 'nationality',  label: 'Nationality',              required: false },
+    { key: 'religion',     label: 'Religion',                 required: false },
+    { key: 'areaOfResidence', label: 'Area of Residence',     required: false },
+    { key: 'dateOfAdmission', label: 'Date of Admission',     required: false },
+    { key: 'accountStatus',   label: 'Account Status',        required: false },
+    { key: 'guardian',     label: 'Father/Guardian Name',     required: false },
+    { key: 'phone',        label: 'Father/Guardian Mobile',   required: false },
+    { key: 'guardian2',    label: 'Mother/Guardian Name',     required: false },
+    { key: 'phone2',       label: 'Mother/Guardian Mobile',   required: false },
+    { key: 'busServices',  label: 'Bus Services (Yes/No)',     required: false },
+    { key: 'scholarNote',  label: 'Type of Scholarship',      required: false },
+    { key: 'previousId',   label: 'Previous ID (ref)',        required: false },
   ];
 
   // Auto-match headers to fields by keyword similarity
   function autoMatch(fieldKey, label) {
     const keywords = {
-      name:        ['name','student','full'],
-      grade:       ['grade','class','level','form'],
-      guardian:     ['guardian','parent','father','mother'],
-      guardianRel:  ['relationship','relation','guardian rel'],
-      phone:        ['phone','mobile','contact','tel'],
-      guardian2:    ['second','2nd','guardian 2','other guardian'],
-      guardian2Rel: ['second relationship','2nd relation'],
-      phone2:       ['phone 2','second phone','2nd phone'],
-      id:          ['id','number','reg'],
-      studentType: ['type','boarding','day'],
-      familyId:    ['family','sibling'],
-      scholarship: ['scholarship','bursary','discount','amount'],
-      scholarNote: ['note','remark','scholarship note'],
+      surname:      ['surname','last name','family name'],
+      firstName:    ['first name','first'],
+      otherNames:   ['other names','other','middle'],
+      id:           ['student id','fria','id'],
+      grade:        ['class','grade','level','form'],
+      gender:       ['gender','sex'],
+      dob:          ['birth','dob','born'],
+      nationality:  ['nationality','nation','country'],
+      religion:     ['religion','faith'],
+      areaOfResidence: ['area','residence','address','location'],
+      dateOfAdmission: ['admission','admitted','enrolled'],
+      accountStatus:   ['account status','status'],
+      guardian:     ['father','guardian name','father/guardian name'],
+      phone:        ['father/guardian mobile','father mobile','mobile'],
+      guardian2:    ['mother','mother/guardian','mother/guardian name'],
+      phone2:       ['mother/guardian mobile','mother mobile'],
+      busServices:  ['bus','transport'],
+      scholarNote:  ['scholarship','bursary','sponsor','type of scholarship'],
+      previousId:   ['previous','prev id','old id'],
     };
     const kw = keywords[fieldKey] || [];
     for (let i = 0; i < importHeaders.length; i++) {
@@ -5269,26 +5543,41 @@ function runPreview() {
 
   importParsed = importRows.map((row, ri) => {
     const get = col => col >= 0 ? String(row[col] || '').trim() : '';
-    const name        = get(getCol('name'));
-    const grade       = get(getCol('grade'));
+    const surname      = get(getCol('surname'));
+    const firstName    = get(getCol('firstName'));
+    const otherNames   = get(getCol('otherNames'));
+    // Build full name: Surname FirstName OtherNames (or just use name if old format)
+    const nameParts    = [surname, firstName, otherNames].filter(Boolean);
+    const name         = nameParts.length > 0 ? nameParts.join(' ') : get(getCol('name'));
+    const grade        = get(getCol('grade'));
     const guardian     = get(getCol('guardian'));
-    const guardianRel  = get(getCol('guardianRel'));
     const phone        = get(getCol('phone'));
     const guardian2    = get(getCol('guardian2'));
-    const guardian2Rel = get(getCol('guardian2Rel'));
     const phone2       = get(getCol('phone2'));
-    const id          = get(getCol('id'));
-    const studentType = 'day'; // all students are day students
-    const familyId    = get(getCol('familyId'));
-    const scholarship = parseFloat(get(getCol('scholarship'))) || 0;
-    const scholarNote = get(getCol('scholarNote'));
+    const id           = get(getCol('id'));
+    const gender       = get(getCol('gender'));
+    const dob          = get(getCol('dob'));
+    const nationality  = get(getCol('nationality'));
+    const religion     = get(getCol('religion'));
+    const areaOfResidence  = get(getCol('areaOfResidence'));
+    const dateOfAdmission  = get(getCol('dateOfAdmission'));
+    const accountStatus    = get(getCol('accountStatus')) || 'Active';
+    const busServicesRaw   = get(getCol('busServices'));
+    const ridesBus         = busServicesRaw.toLowerCase() === 'yes';
+    const scholarNote      = get(getCol('scholarNote'));
+    const previousId       = get(getCol('previousId'));
+
+    // Detect scholarship type from note
+    const isCormKid    = /corm kid/i.test(scholarNote);
+    const isFullSponsor = /zero tuition|full.?sponsor|staff kid|sponsored/i.test(scholarNote) && !isCormKid;
+    const isSibling10  = /sibling.*10|10.*sibling/i.test(scholarNote);
+    const isSibling15  = /sibling.*15|15.*sibling/i.test(scholarNote);
 
     // Validate
     const errors = [], warnings = [];
-    if (!name)  errors.push('Missing name');
-    if (!grade) errors.push('Missing grade');
+    if (!name.trim()) errors.push('Missing name');
+    if (!grade)       errors.push('Missing grade');
     else {
-      // Fuzzy-match grade
       const matched = fuzzyMatchGrade(grade);
       if (!matched) errors.push('Unknown grade: "' + grade + '"');
     }
@@ -5297,12 +5586,17 @@ function runPreview() {
 
     const matchedGrade = grade ? fuzzyMatchGrade(grade) : '';
     const status = errors.length > 0 ? 'err' : warnings.length > 0 ? 'warn' : 'ok';
-    const note = errors.concat(warnings).join('; ') || '✔ Ready';
+    const note   = errors.concat(warnings).join('; ') || '✔ Ready';
 
-    return { rowNum: ri+2, name, grade: matchedGrade || grade,
-             guardian, guardianRel, phone,
-             guardian2, guardian2Rel, phone2,
-             id, studentType, familyId, scholarship, scholarNote, status, note };
+    return { rowNum: ri+2, name: name.trim(), surname, firstName, otherNames,
+             grade: matchedGrade || grade,
+             guardian, phone, guardian2, phone2,
+             id, gender, dob, nationality, religion,
+             areaOfResidence, dateOfAdmission, accountStatus,
+             ridesBus, scholarNote, previousId,
+             cormKid: isCormKid, fullSponsor: isFullSponsor,
+             multiChild10: isSibling10, multiChild15: isSibling15,
+             status, note };
   });
 
   // Render preview table
@@ -5350,6 +5644,7 @@ function fuzzyMatchGrade(input) {
   }
   // Aliases
   const aliases = {
+    // Standard names
     'creche':'Creche','nursery 1':'Nursery 1','nursery 2':'Nursery 2',
     'nursery1':'Nursery 1','nursery2':'Nursery 2',
     'kg 1':'KG 1','kg1':'KG 1','kg 2':'KG 2','kg2':'KG 2',
@@ -5364,6 +5659,16 @@ function fuzzyMatchGrade(input) {
     'form 1':'JHS Form 1','form 2':'JHS Form 2','form 3':'JHS Form 3',
     'jhs1':'JHS Form 1','jhs2':'JHS Form 2','jhs3':'JHS Form 3',
     'j1':'JHS Form 1','j2':'JHS Form 2','j3':'JHS Form 3',
+    // FRIA Master Database xlsx names
+    'nursery one':'Nursery 1','nursery two':'Nursery 2',
+    'kindergarten one':'KG 1','kindergarten two':'KG 2',
+    'kg one':'KG 1','kg two':'KG 2',
+    'basic 1':'Class 1','basic 2':'Class 2','basic 3':'Class 3',
+    'basic 4':'Class 4','basic 5':'Class 5','basic 6':'Class 6',
+    'basic one':'Class 1','basic two':'Class 2','basic three':'Class 3',
+    'basic four':'Class 4','basic five':'Class 5','basic six':'Class 6',
+    'basic 7':'JHS Form 1','basic 8':'JHS Form 2','basic 9':'JHS Form 3',
+    'basic seven':'JHS Form 1','basic eight':'JHS Form 2','basic nine':'JHS Form 3',
   };
   return aliases[s] || null;
 }
@@ -5395,13 +5700,41 @@ function confirmImport() {
       });
     });
 
+    // Add fuzzy grade aliases for the xlsx class names
+    const fuzzyGrade = fuzzyMatchGrade(r.grade) || r.grade;
+
     students.push({
-      id: sid, name: r.name, grade: r.grade,
-      guardian: r.guardian, guardianRel: r.guardianRel, phone: r.phone,
-      guardian2: r.guardian2, guardian2Rel: r.guardian2Rel, phone2: r.phone2,
-      familyId: r.familyId, studentType: r.studentType,
-      scholarship: r.scholarship, scholarNote: r.scholarNote,
-      fees, discounts: { multiChild10: false, multiChild15: false, promoCode: '', promoDiscPct: 0, siblings: [] },
+      id: sid,
+      name: r.name,
+      surname: r.surname || '',
+      firstName: r.firstName || '',
+      otherNames: r.otherNames || '',
+      grade: fuzzyGrade,
+      gender: r.gender || '',
+      dob: r.dob || '',
+      nationality: r.nationality || '',
+      religion: r.religion || '',
+      areaOfResidence: r.areaOfResidence || '',
+      dateOfAdmission: r.dateOfAdmission || '',
+      accountStatus: r.accountStatus || 'Active',
+      guardian: r.guardian || '',
+      guardianRel: 'Father/Guardian',
+      phone: r.phone || '',
+      guardian2: r.guardian2 || '',
+      guardian2Rel: 'Mother/Guardian',
+      phone2: r.phone2 || '',
+      ridesBus: r.ridesBus || false,
+      scholarNote: r.scholarNote || '',
+      previousId: r.previousId || '',
+      cormKid: r.cormKid || false,
+      fullSponsor: r.fullSponsor || false,
+      scholarship: 0,
+      fees,
+      discounts: {
+        multiChild10: r.multiChild10 || false,
+        multiChild15: r.multiChild15 || false,
+        promoCode: '', promoDiscPct: 0, siblings: []
+      },
       paymentLog: [], arrears: {},
       addedOn: new Date().toISOString()
     });
