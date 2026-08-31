@@ -942,6 +942,9 @@
 
     <div class="summary-strip" id="dash-summary"></div>
 
+    <!-- Upcoming events strip -->
+    <div id="dash-events-strip" style="margin-bottom:1rem"></div>
+
     <div class="card">
       <h2>📌 Outstanding Balances — <span id="dash-term-label">Term 3 — 2026/2027</span></h2>
       <div id="dash-outstanding"></div>
@@ -1897,6 +1900,102 @@ async function deleteUser(uid) {
 // ─────────────────────────────────────────────
 // 1. DATA — where all student info is stored
 // ─────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// FRIA ACADEMIC CALENDAR 2026/2027
+// ══════════════════════════════════════════════════════════════
+const ACADEMIC_CALENDAR = {
+  '2026/2027': {
+    'Term 1': {
+      start: '2026-09-07',
+      end:   '2026-12-18',
+      months: ['September','October','November','December'],
+      reopening: '07/09/2026',
+      events: [
+        { date: '2026-09-07', label: 'First Day of School' },
+        { date: '2026-09-21', label: "Founders' Day (Holiday)" },
+        { date: '2026-10-05', label: 'CHE (Holiday)' },
+        { date: '2026-10-19', label: 'Midterm Exams Begin' },
+        { date: '2026-10-26', label: 'Midterm Break' },
+        { date: '2026-10-28', label: 'PTA Meeting' },
+        { date: '2026-11-02', label: 'CHE (Holiday)' },
+        { date: '2026-12-04', label: "Farmer's Day (Holiday)" },
+        { date: '2026-12-08', label: 'End-of-Term Exams Begin' },
+        { date: '2026-12-17', label: 'Carols Day' },
+        { date: '2026-12-18', label: 'Our Day — End of Term 1' },
+      ]
+    },
+    'Term 2': {
+      start: '2027-01-12',
+      end:   '2027-04-16',
+      months: ['January','February','March','April'],
+      reopening: '12/01/2027',
+      events: [
+        { date: '2027-01-12', label: 'Students Resume' },
+        { date: '2027-02-01', label: 'CHE (Holiday)' },
+        { date: '2027-03-01', label: 'Midterm Exams Begin' },
+        { date: '2027-03-08', label: 'Independence Day & Midterm Break' },
+        { date: '2027-03-10', label: 'PTA Meeting' },
+        { date: '2027-03-26', label: 'Good Friday (Holiday)' },
+        { date: '2027-03-29', label: 'Easter Monday (Holiday)' },
+        { date: '2027-04-06', label: 'Final Exams Begin' },
+        { date: '2027-04-16', label: 'Our Day — End of Term 2' },
+      ]
+    },
+    'Term 3': {
+      start: '2027-05-05',
+      end:   '2027-07-30',
+      months: ['May','June','July'],
+      reopening: '05/05/2027',
+      events: [
+        { date: '2027-05-05', label: 'Students Resume' },
+        { date: '2027-05-17', label: 'Eid al-Adha (Holiday)' },
+        { date: '2027-05-21', label: 'JHS Graduation' },
+        { date: '2027-06-07', label: 'CHE (Holiday)' },
+        { date: '2027-06-24', label: 'Midterm Break Begins' },
+        { date: '2027-07-20', label: 'End-of-Term Exams Begin' },
+        { date: '2027-07-29', label: 'Preschool Graduation' },
+        { date: '2027-07-30', label: 'Our Day — Last Day of School' },
+      ]
+    }
+  }
+};
+
+// Get current term dates from calendar
+function getTermDates(term) {
+  const yr = getAcademicYear();
+  return ACADEMIC_CALENDAR[yr]?.[term] || {};
+}
+
+// Get reopening date for current term
+function getTermReopening(term) {
+  return getTermDates(term).reopening || '';
+}
+
+// Get months for current term
+function getTermMonths(term) {
+  return getTermDates(term).months || [];
+}
+
+// Auto-fill bus tracker start date from calendar
+function autoFillBusStart() {
+  const el = document.getElementById('bus-tracker-start');
+  if (el && !el.value) {
+    const term = document.getElementById('bus-term')?.value || activeTerm;
+    const dates = getTermDates(term);
+    if (dates.start) el.value = dates.start;
+  }
+}
+
+// Auto-fill bill reopening date from calendar
+function autoFillReopening() {
+  const el = document.getElementById('class-bill-reopening');
+  if (el && !el.value) {
+    const term = document.getElementById('class-bill-term')?.value || activeTerm;
+    el.value = getTermReopening(term);
+  }
+}
+
 const TERMS = ['Term 1', 'Term 2', 'Term 3'];
 
 // Fee categories: label + key + JHS-only flag
@@ -2145,8 +2244,8 @@ function showTab(id) {
 
   closeDetail();
   if (id === 'students')  renderStudentList();
-  if (id === 'reports')   { renderReport(); initDailyReport(); }
-  if (id === 'bus')       { renderBusTracker(); }
+  if (id === 'reports')   { renderReport(); initDailyReport(); autoFillReopening(); }
+  if (id === 'bus')       { autoFillBusStart(); renderBusTracker(); }
   if (id === 'dashboard') renderDashboard();
   if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); renderEarlyPayDiscountUI(); }
   if (id === 'import')    resetImport();
@@ -3499,7 +3598,7 @@ Tel: 0240204106`);
     push(''); 
     // NOTE
     push('NOTE');
-    push(`a. ${termOrd} FEE PAYMENT IS DUE ${reopening}`);
+    push(`a. FEES ARE DUE ON ${reopening || getTermReopening(term) || 'REOPENING DATE'} — PLEASE PAY PROMPTLY`);
     push('b. LATE FEE CHARGE IS GH₵ 50.00');
     push('c. All outstanding arrears from previous term must be settled on day of reopening');
     push(`d. MOMO: 0597435300 / CALL No. 0240204106`);
@@ -3634,36 +3733,46 @@ function showSync(msg, isError) {
 }
 
 function forceSync() {
-  showSync('Refreshing…');
+  try { showSync('Refreshing…'); } catch(e) {}
+  // Show a spinner on the button
+  const btn = document.querySelector('[onclick="forceSync()"]');
+  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+
   db.ref('appData').once('value').then(snapshot => {
     const data = snapshot.val();
-    if (!data) { toast('⚠️ No data found in database.'); return; }
+
+    if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; }
+
+    if (!data) {
+      alert('No data found in Firebase database. Please contact your system admin.');
+      return;
+    }
+
     if (data.students) {
       const incoming = Object.values(data.students).filter(s => s && s.id && s.name);
       if (incoming.length > 0) {
         students = incoming;
+        feeSchedule = data.feeSchedule || feeSchedule;
+        activeTerm  = data.activeTerm || activeTerm;
+        storeProducts = data.storeProducts ? Object.values(data.storeProducts) : storeProducts;
+        storeSales    = data.storeSales    ? Object.values(data.storeSales)    : storeSales;
+        const termEl  = document.getElementById('global-term');
+        const badgeEl = document.getElementById('active-term-badge');
+        if (termEl)  termEl.value = activeTerm;
+        if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
+        renderDashboard();
+        renderStudentList();
+        try { showSync('✓ ' + students.length + ' students'); } catch(e) {}
+        alert('✅ ' + students.length + ' students loaded successfully!');
+      } else {
+        alert('Firebase returned 0 students. The database may be empty — please re-import the student CSV.');
       }
-    }
-    if (data.feeSchedule) feeSchedule = data.feeSchedule;
-    activeTerm    = data.activeTerm || 'Term 3';
-    storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
-    storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
-    const termEl  = document.getElementById('global-term');
-    const badgeEl = document.getElementById('active-term-badge');
-    if (termEl)  termEl.value = activeTerm;
-    if (badgeEl) badgeEl.textContent = termWithYear(activeTerm);
-    if (students.length > 0) {
-      renderDashboard();
-      renderStudentList();
-      const now = new Date().toLocaleTimeString('en-GH', {hour:'2-digit', minute:'2-digit'});
-      showSync('✓ Refreshed at ' + now + ' — ' + students.length + ' students');
-      toast('✅ ' + students.length + ' students loaded.');
     } else {
-      toast('⚠️ No students returned from server — keeping existing data.');
+      alert('No students found in database. Please re-import the student CSV file.');
     }
   }).catch(err => {
-    showSync('⚠ Refresh failed', true);
-    toast('⚠️ Could not refresh: ' + err.message);
+    if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; }
+    alert('❌ Error: ' + err.message + '\n\nThis may be a Firebase rules issue. Please check your Firebase database rules.');
   });
 }
 
@@ -3908,9 +4017,11 @@ function termTotals(student, term) {
 // Monthly breakdown: each Ghanaian term ≈ 3 months
 function monthlyBreakdown(student, term) {
   const { billed } = termTotals(student, term);
-  const termMonths = { 'Term 1': ['September','October','November'],
-                       'Term 2': ['January','February','March'],
-                       'Term 3': ['April','May','June'] };
+  const termMonths = {
+    'Term 1': getTermMonths('Term 1').length ? getTermMonths('Term 1') : ['September','October','November','December'],
+    'Term 2': getTermMonths('Term 2').length ? getTermMonths('Term 2') : ['January','February','March','April'],
+    'Term 3': getTermMonths('Term 3').length ? getTermMonths('Term 3') : ['May','June','July']
+  };
   const months = termMonths[term] || ['Month 1','Month 2','Month 3'];
   const perMonth = billed / 3;
   const monthlyPaid = student.monthlyPaid || {};
@@ -4551,6 +4662,45 @@ function deleteStudent(id) {
 // ─────────────────────────────────────────────
 // 7. DASHBOARD
 // ─────────────────────────────────────────────
+function renderCalendarEvents() {
+  const strip = document.getElementById('dash-events-strip');
+  if (!strip) return;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const yr = getAcademicYear();
+  const cal = ACADEMIC_CALENDAR[yr];
+  if (!cal) { strip.innerHTML = ''; return; }
+
+  // Collect all events across all terms
+  const allEvents = [];
+  Object.entries(cal).forEach(([term, tData]) => {
+    (tData.events || []).forEach(ev => {
+      const d = new Date(ev.date);
+      allEvents.push({ date: d, label: ev.label, term });
+    });
+  });
+
+  // Show events in the next 14 days
+  const upcoming = allEvents
+    .filter(ev => ev.date >= today && ev.date <= new Date(today.getTime() + 14*24*60*60*1000))
+    .sort((a,b) => a.date - b.date);
+
+  if (!upcoming.length) { strip.innerHTML = ''; return; }
+
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  strip.innerHTML = `
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.2rem">
+      ${upcoming.map(ev => {
+        const diff = Math.round((ev.date - today) / (1000*60*60*24));
+        const when = diff === 0 ? 'TODAY' : diff === 1 ? 'TOMORROW' : dayNames[ev.date.getDay()] + ' ' + ev.date.getDate();
+        const isToday = diff === 0;
+        return `<div style="background:${isToday?'#c62828':'var(--green)'};color:#fff;border-radius:8px;padding:.35rem .8rem;font-size:.78rem;display:flex;align-items:center;gap:.5rem">
+          <strong>${when}</strong> <span style="opacity:.85">${ev.label}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
 function renderDashboard() {
   const term = activeTerm;
   document.getElementById('dash-term-label').textContent = termWithYear(term);
@@ -4601,10 +4751,12 @@ function renderDashboard() {
     });
 
   if (owing.length === 0) {
-    document.getElementById('dash-outstanding').innerHTML = `<div class="empty"><div class="e-icon">🎉</div><p>All students are fully paid for ${term}!</p></div>`;
+    renderCalendarEvents();
+  document.getElementById('dash-outstanding').innerHTML = `<div class="empty"><div class="e-icon">🎉</div><p>All students are fully paid for ${term}!</p></div>`;
     return;
   }
 
+  renderCalendarEvents();
   document.getElementById('dash-outstanding').innerHTML = `
     <table class="report-table"><thead><tr>
       <th>Name</th><th>Grade</th><th>Balance Owing</th>
