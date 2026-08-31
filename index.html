@@ -1957,11 +1957,30 @@ let _appDataListener = null;
 
 function applyAppData(data) {
   if (!data) return;
-  if (data.students) {
-    students = Object.values(data.students).filter(s => s && s.id && s.name);
-  } else {
-    students = [];
+
+  // ── SAFETY GUARD: never replace existing students with an empty list ──
+  const incomingStudents = data.students
+    ? Object.values(data.students).filter(s => s && s.id && s.name)
+    : [];
+
+  if (incomingStudents.length === 0 && students.length > 0) {
+    // Firebase returned empty students but we already have data — ignore
+    console.warn('Firebase returned 0 students but we have ' + students.length + ' locally — ignoring empty update');
+    return;
   }
+
+  if (incomingStudents.length > 0) {
+    students = incomingStudents;
+    // Save a local backup whenever we get real student data
+    try {
+      sessionStorage.setItem('friaStudentBackup', JSON.stringify({
+        students: incomingStudents,
+        savedAt: new Date().toISOString(),
+        count: incomingStudents.length
+      }));
+    } catch(e) {}
+  }
+
   feeSchedule   = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0)
                   ? data.feeSchedule
                   : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
@@ -2034,14 +2053,23 @@ function save(immediate) {
   if (_saveTimer) clearTimeout(_saveTimer);
   const doSave = async () => {
     try {
-      // Convert arrays to objects keyed by id for Firebase
+      // ── SAFETY: never overwrite Firebase students with an empty list ──
+      if (students.length === 0) {
+        const existing = await dbGet('appData/students');
+        if (existing && Object.keys(existing).length > 0) {
+          console.warn('Blocked save of 0 students — Firebase still has ' + Object.keys(existing).length + ' students');
+          showSync('⚠ Save blocked — would have deleted all students', true);
+          return;
+        }
+      }
+
       const studentsObj = {};
       students.forEach(s => { studentsObj[s.id] = s; });
       const productsObj = {};
       storeProducts.forEach(p => { productsObj[p.id] = p; });
       const salesObj = {};
       storeSales.forEach(s => { salesObj[s.id] = s; });
-      // Use update() not set() so we don't wipe bus fees, categories etc.
+
       await db.ref('appData').update({
         students: studentsObj,
         feeSchedule: feeSchedule,
@@ -2049,7 +2077,19 @@ function save(immediate) {
         storeProducts: productsObj,
         storeSales: salesObj
       });
-      showSync('✓ Saved to cloud');
+
+      // Save count to sessionStorage as a running record
+      sessionStorage.setItem('friaLastSaveCount', students.length);
+      showSync('✓ Saved — ' + students.length + ' students');
+
+      // Auto-backup: keep a timestamped snapshot of student IDs for recovery
+      if (students.length > 0) {
+        db.ref('appData/backup').update({
+          studentCount: students.length,
+          lastSaved: new Date().toISOString(),
+          savedBy: currentUser?.name || 'unknown'
+        });
+      }
     } catch(err) {
       showSync('⚠ Save failed — check connection', true);
       console.error('Firebase save error:', err);
