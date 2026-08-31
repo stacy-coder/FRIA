@@ -2181,7 +2181,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           await loadAllData();
           await loadFeeCats();
           await loadEarlyPayDiscount();
-          await loadBusFees();
           await loadBusTracker();
           hideLoading();
           checkAndRunPromotion();
@@ -2829,6 +2828,30 @@ function onNewStudentGradeChange() {
 
 // ─────────────────────────────────────────────────────────────
 
+
+
+// ── Bus fee legacy stubs (referenced in reports/daily report) ──
+let busFeePayments = {};
+let busFeeRates    = {};
+
+function getBusRateForGrade(grade) {
+  const BUS_GRADE_GROUPS = [
+    { grades: ['Creche','Nursery 1','Nursery 2'], key: 'preschool' },
+    { grades: ['KG 1','KG 2','Class 1','Class 2','Class 3'], key: 'lower' },
+    { grades: ['Class 4','Class 5','Class 6'], key: 'upper' },
+    { grades: ['JHS Form 1','JHS Form 2','JHS Form 3'], key: 'jhs' },
+  ];
+  for (const g of BUS_GRADE_GROUPS) {
+    if (g.grades.includes(grade)) return busFeeRates[g.key] || 0;
+  }
+  return 0;
+}
+
+function renderBusRosters() { renderBusTracker(); }
+function openBusPayModal()   {}
+function closeBusPayModal()  {}
+function submitBusPayment()  {}
+function deleteBusPayment()  {}
 
 // ══════════════════════════════════════════════════════════════
 // BUS FEE WEEKLY TRACKER — interactive live table
