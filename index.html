@@ -3626,6 +3626,17 @@ function downloadMonthlyBillsXLSX() {
 
 // ─────────────────────────────────────────────────────────────
 
+
+function showSync(msg, isError) {
+  const dot = document.getElementById('sync-dot');
+  const msgEl = document.getElementById('sync-msg');
+  if (msgEl) msgEl.textContent = msg;
+  if (dot) {
+    dot.style.background = isError ? '#ef9a9a' : '#a5d6a7';
+    dot.classList.toggle('pulse', !isError);
+  }
+}
+
 function forceSync() {
   showSync('Refreshing…');
   db.ref('appData').once('value').then(snapshot => {
