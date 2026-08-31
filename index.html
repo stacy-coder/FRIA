@@ -1913,7 +1913,12 @@ let _saveTimer  = null;
 async function loadAllData() {
   const data = await dbGet('appData');
   if (data) {
-    students    = data.students    ? Object.values(data.students)    : [];
+    // Firebase stores students as object keyed by ID — convert back to array
+    if (data.students) {
+      students = Object.values(data.students).filter(s => s && s.id && s.name);
+    } else {
+      students = [];
+    }
     feeSchedule = (data.feeSchedule && Object.keys(data.feeSchedule).length > 0) ? data.feeSchedule : JSON.parse(JSON.stringify(DEFAULT_FEE_SCHEDULE));
     activeTerm  = data.activeTerm  || 'Term 3';
     storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
@@ -1924,24 +1929,36 @@ async function loadAllData() {
 }
 
 // Debounced save — batches rapid changes into one write
-function save() {
+function save(immediate) {
   if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(async () => {
+  const doSave = async () => {
     try {
-      // Convert students array to object keyed by id for Firebase
+      // Convert arrays to objects keyed by id for Firebase
       const studentsObj = {};
       students.forEach(s => { studentsObj[s.id] = s; });
       const productsObj = {};
       storeProducts.forEach(p => { productsObj[p.id] = p; });
       const salesObj = {};
       storeSales.forEach(s => { salesObj[s.id] = s; });
-      await dbSet('appData', { students: studentsObj, feeSchedule, activeTerm, storeProducts: productsObj, storeSales: salesObj });
+      // Use update() not set() so we don't wipe bus fees, categories etc.
+      await db.ref('appData').update({
+        students: studentsObj,
+        feeSchedule: feeSchedule,
+        activeTerm: activeTerm,
+        storeProducts: productsObj,
+        storeSales: salesObj
+      });
       showSync('✓ Saved to cloud');
     } catch(err) {
       showSync('⚠ Save failed — check connection', true);
       console.error('Firebase save error:', err);
     }
-  }, 800); // wait 800ms after last change before writing
+  };
+  if (immediate) {
+    doSave();
+  } else {
+    _saveTimer = setTimeout(doSave, 800);
+  }
 }
 
 function toggleMomoRef(wrapId, method) {
@@ -4500,7 +4517,7 @@ function runPromotion(year) {
     graduated
   });
 
-  save();
+  save(true); // immediate save — no debounce delay
   renderDashboard();
   renderStudentList();
 
@@ -4561,7 +4578,7 @@ function reversePromotion() {
   // Clear promotion record so auto-check can run again
   dbSet('appData/lastPromotion', null);
 
-  save();
+  save(true); // immediate save — no debounce delay
   renderDashboard();
   renderStudentList();
   toast(`✅ Reversed! ${reversed} students moved back one grade.`);
@@ -5741,7 +5758,7 @@ function confirmImport() {
     created++;
   });
 
-  save();
+  save(true); // immediate save — no debounce delay
   renderDashboard();
   renderStudentList();
 
