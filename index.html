@@ -5579,10 +5579,9 @@ function runPreview() {
     if (!grade)       errors.push('Missing grade');
     else {
       const matched = fuzzyMatchGrade(grade);
-      if (!matched) errors.push('Unknown grade: "' + grade + '"');
+      if (!matched) warnings.push('Unknown grade: "' + grade + '" — will be imported as-is');
     }
-    if (!guardian) warnings.push('No guardian');
-    if (!phone)    warnings.push('No phone');
+    // Guardian and phone are optional — no warnings for missing contact info
 
     const matchedGrade = grade ? fuzzyMatchGrade(grade) : '';
     const status = errors.length > 0 ? 'err' : warnings.length > 0 ? 'warn' : 'ok';
@@ -5675,7 +5674,8 @@ function fuzzyMatchGrade(input) {
 
 // ── Create all valid student accounts ──
 function confirmImport() {
-  const valid = importParsed.filter(r => r.status !== 'err');
+  // Import all rows — only skip ones with no name at all
+  const valid = importParsed.filter(r => r.name && r.name.trim());
   if (valid.length === 0) return toast('⚠️ No valid rows to import.');
 
   let created = 0, skipped = 0;
