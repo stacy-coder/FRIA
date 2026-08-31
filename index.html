@@ -408,6 +408,38 @@
     .mini-bill { border: 1px solid #999; }
     body.printing-class-bills > *:not(.class-bills-print-container) { display: none !important; }
   }
+
+  /* ── Bus Fee Tracker Table ── */
+  .bus-tracker-table { border-collapse:collapse; font-size:.75rem; min-width:100%; }
+  .bus-tracker-table th { background:var(--green); color:#fff; padding:.3rem .4rem;
+    text-align:center; white-space:nowrap; font-size:.7rem; position:sticky; top:0; z-index:2; }
+  .bus-tracker-table td { padding:.2rem .3rem; border:1px solid #e0e0e0; vertical-align:middle; }
+  .bus-tracker-table .th-name { background:#1B5E20; text-align:left; position:sticky; left:0; z-index:3; min-width:160px; }
+  .bus-tracker-table .th-num  { background:#1B5E20; position:sticky; left:0; z-index:3; width:28px; }
+  .bus-tracker-table .td-name { font-weight:600; font-size:.78rem; background:#f9fbe7;
+    position:sticky; left:0; z-index:1; white-space:nowrap; padding:.3rem .5rem; }
+  .bus-tracker-table .td-num  { text-align:center; color:#999; background:#f9fbe7;
+    position:sticky; left:0; z-index:1; }
+  .bus-tracker-table .td-day  { text-align:center; }
+  .bus-tracker-table .td-day input {
+    width:52px; border:none; background:transparent; text-align:center;
+    font-size:.78rem; font-family:'DM Sans',sans-serif; padding:.1rem;
+    border-radius:4px; }
+  .bus-tracker-table .td-day input:focus { background:#fff9c4; outline:1px solid #f9a825; }
+  .bus-tracker-table .td-arr  { background:#fff8e1; color:#e65100; font-weight:700;
+    text-align:center; font-size:.75rem; }
+  .bus-tracker-table .td-sett input {
+    width:52px; border:none; background:transparent; text-align:center;
+    font-size:.78rem; font-family:'DM Sans',sans-serif; padding:.1rem;
+    border-radius:4px; color:#1B5E20; font-weight:600; }
+  .bus-tracker-table .td-sett { background:#e8f5e9; }
+  .bus-tracker-table .td-sett input:focus { background:#c8e6c9; outline:none; }
+  .bus-tracker-table .td-total { background:#fce8e6; color:#c62828; font-weight:700;
+    text-align:center; font-size:.75rem; }
+  .bus-tracker-table .class-hdr td { background:var(--green); color:#fff;
+    font-weight:700; font-size:.8rem; padding:.35rem .5rem; }
+  .bus-tracker-table tr:nth-child(even) .td-day { background:#fafffe; }
+  .bus-tracker-table .week-hdr { background:#e8f5e9; color:var(--green); font-weight:700; font-size:.67rem; }
   /* ── BULK IMPORT ── */
   .upload-zone {
     border: 2.5px dashed var(--gray-2); border-radius: 14px;
@@ -1259,40 +1291,43 @@
   <!-- ════════════ BUS FEES ════════════ -->
   <div id="tab-bus" class="section">
 
-    <!-- Settings card -->
-    <div class="card">
-      <h2>🚌 Bus Fee Settings</h2>
+    <!-- Controls card -->
+    <div class="card no-print">
+      <h2>🚌 Bus Fee Weekly Tracker</h2>
       <p style="font-size:.84rem;color:var(--gray-3);margin-bottom:1rem">
-        Set the monthly bus fee per grade group. Students with <strong>Rides Bus</strong> ticked will appear in the class rosters below.
+        Enter daily payments directly in the table. Arrears calculate automatically and data saves to the cloud instantly.
+        Students with <strong>Rides Bus</strong> ticked on their account appear here automatically.
       </p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem;margin-bottom:1rem" id="bus-fee-rate-grid"></div>
-      <button class="btn btn-primary btn-sm" onclick="saveBusFeeRates()">💾 Save Bus Fee Rates</button>
-    </div>
-
-    <!-- Roster + payment tracking -->
-    <div class="card">
-      <h2>📋 Bus Rider Rosters</h2>
-      <div class="term-row" style="flex-wrap:wrap;gap:.8rem">
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end;margin-bottom:1rem">
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Term</label>
-          <select id="bus-term" onchange="renderBusRosters()" style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+          <select id="bus-term" onchange="renderBusTracker()"
+            style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
             <option>Term 1</option><option>Term 2</option><option selected>Term 3</option>
           </select>
         </div>
         <div>
-          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Month</label>
-          <select id="bus-month" onchange="renderBusRosters()" style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
-            <option>January</option><option>February</option><option>March</option>
-            <option>April</option><option>May</option><option>June</option>
-            <option>July</option><option>August</option><option>September</option>
-            <option>October</option><option>November</option><option>December</option>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Term Start Date</label>
+          <input type="date" id="bus-tracker-start" onchange="renderBusTracker()"
+            style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem"/>
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">Show Weeks</label>
+          <select id="bus-week-count" onchange="renderBusTracker()"
+            style="padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--gray-2);font-size:.9rem">
+            <option value="4">4 Weeks</option>
+            <option value="7">7 Weeks</option>
+            <option value="14" selected>14 Weeks (Full Term)</option>
           </select>
         </div>
-        <div style="display:flex;align-items:flex-end">
-          <button class="btn btn-export btn-sm" onclick="printBusRosters()">🖨️ Print Rosters</button>
-        </div>
+        <button class="btn btn-export btn-sm" onclick="window.print()">🖨️ Print</button>
+        <button class="btn btn-gold btn-sm" onclick="downloadBusTrackerXLSX()">📥 Download (.xlsx)</button>
       </div>
-      <div id="bus-rosters" style="margin-top:1.2rem"></div>
+    </div>
+
+    <!-- Live tracker table -->
+    <div class="card" style="overflow-x:auto;padding:1rem .5rem">
+      <div id="bus-tracker-content"></div>
     </div>
 
   </div>
@@ -2049,7 +2084,7 @@ function showTab(id) {
   closeDetail();
   if (id === 'students')  renderStudentList();
   if (id === 'reports')   { renderReport(); initDailyReport(); }
-  if (id === 'bus')       { renderBusFeeRateGrid(); renderBusRosters(); }
+  if (id === 'bus')       { renderBusTracker(); }
   if (id === 'dashboard') renderDashboard();
   if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); renderEarlyPayDiscountUI(); }
   if (id === 'import')    resetImport();
@@ -2147,6 +2182,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await loadFeeCats();
           await loadEarlyPayDiscount();
           await loadBusFees();
+          await loadBusTracker();
           hideLoading();
           checkAndRunPromotion();
           // Set bus month selector to current month
@@ -2793,76 +2829,71 @@ function onNewStudentGradeChange() {
 
 // ─────────────────────────────────────────────────────────────
 
+
 // ══════════════════════════════════════════════════════════════
-// BUS FEES
+// BUS FEE WEEKLY TRACKER — interactive live table
 // ══════════════════════════════════════════════════════════════
 
-const GRADE_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
-  'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
-  'JHS Form 1','JHS Form 2','JHS Form 3'];
+// busTracker[term][studentId][weekKey][dayKey] = amount
+// busTracker[term][studentId][weekKey]['sett'] = settled amount
+let busTracker = {};
 
-const BUS_GRADE_GROUPS = [
-  { label: 'Pre-School',   grades: ['Creche','Nursery 1','Nursery 2'],              key: 'preschool' },
-  { label: 'Lower Basic',  grades: ['KG 1','KG 2','Class 1','Class 2','Class 3'],   key: 'lower'     },
-  { label: 'Upper Basic',  grades: ['Class 4','Class 5','Class 6'],                  key: 'upper'     },
-  { label: 'JHS',          grades: ['JHS Form 1','JHS Form 2','JHS Form 3'],         key: 'jhs'       },
-];
-
-let busFeeRates = {}; // { preschool: 0, lower: 0, upper: 0, jhs: 0 }
-let busFeePayments = {}; // { studentId: { 'Term 1': { 'January': { paid, date, receiptNo } } } }
-
-async function loadBusFees() {
-  const rates = await dbGet('appData/busFeeRates');
-  if (rates) busFeeRates = rates;
-  const payments = await dbGet('appData/busFeePayments');
-  if (payments) busFeePayments = payments;
+async function loadBusTracker() {
+  const data = await dbGet('appData/busTracker');
+  if (data) busTracker = data;
 }
 
-async function saveBusFeeRates() {
-  BUS_GRADE_GROUPS.forEach(g => {
-    const val = parseFloat(document.getElementById('bus-rate-' + g.key)?.value) || 0;
-    busFeeRates[g.key] = val;
-  });
-  await dbSet('appData/busFeeRates', busFeeRates);
-  toast('✅ Bus fee rates saved.');
-  renderBusRosters();
+async function saveBusTrackerCell(term, sid, weekKey, dayKey, value) {
+  const path = `appData/busTracker/${term}/${sid}/${weekKey}/${dayKey}`;
+  await dbSet(path, value || null);
 }
 
-function getBusRateForGrade(grade) {
-  for (const g of BUS_GRADE_GROUPS) {
-    if (g.grades.includes(grade)) return busFeeRates[g.key] || 0;
+function getTrackerWeeks(startDate, numWeeks) {
+  // Generate week objects from term start date
+  let start = startDate ? new Date(startDate) : new Date();
+  const dow = start.getDay();
+  start.setDate(start.getDate() - (dow === 0 ? 6 : dow - 1)); // align to Monday
+
+  const weeks = [];
+  for (let w = 0; w < numWeeks; w++) {
+    const ws = new Date(start); ws.setDate(start.getDate() + w * 7);
+    const we = new Date(ws);   we.setDate(ws.getDate() + 4);
+    const fmt = d => `${d.getDate()}/${d.getMonth()+1}/${String(d.getFullYear()).slice(-2)}`;
+    weeks.push({
+      key:   `w${w+1}`,
+      label: `Week ${w+1}\n${fmt(ws)}–${fmt(we)}`,
+      short: `Wk${w+1}`,
+    });
   }
-  return 0;
+  return weeks;
 }
 
-function renderBusFeeRateGrid() {
-  const grid = document.getElementById('bus-fee-rate-grid');
-  if (!grid) return;
-  grid.innerHTML = BUS_GRADE_GROUPS.map(g => `
-    <div style="background:var(--gray-1);border-radius:8px;padding:.8rem">
-      <label style="font-size:.78rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;display:block;margin-bottom:.3rem">${g.label}</label>
-      <div style="display:flex;align-items:center;gap:.4rem">
-        <span style="font-size:.88rem">GH₵</span>
-        <input type="number" min="0" step="0.01" id="bus-rate-${g.key}"
-          value="${busFeeRates[g.key]||''}" placeholder="0.00"
-          style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.9rem;font-weight:600"/>
-        <span style="font-size:.78rem;color:var(--gray-3)">/mo</span>
-      </div>
-      <div style="font-size:.75rem;color:var(--gray-3);margin-top:.3rem">${g.grades.join(', ')}</div>
-    </div>`).join('');
-}
-
-function renderBusRosters() {
-  const container = document.getElementById('bus-rosters');
+function renderBusTracker() {
+  const container = document.getElementById('bus-tracker-content');
   if (!container) return;
 
-  const term  = document.getElementById('bus-term')?.value  || activeTerm;
-  const month = document.getElementById('bus-month')?.value || '';
+  const term     = document.getElementById('bus-term')?.value || activeTerm;
+  const startVal = document.getElementById('bus-tracker-start')?.value || '';
+  const numWeeks = parseInt(document.getElementById('bus-week-count')?.value || '14');
 
-  // Get all bus riders grouped by grade
-  const riders = students.filter(s => s.ridesBus && s.grade !== 'Graduated');
-  if (riders.length === 0) {
-    container.innerHTML = '<div class="empty"><div class="e-icon">🚌</div><p>No students are currently marked as bus riders.<br>Open a student account and tick <strong>Rides Bus</strong> to add them.</p></div>';
+  const DAYS = [
+    { key:'mon', label:'MON' }, { key:'tue', label:'TUE' },
+    { key:'wed', label:'WED' }, { key:'thu', label:'THU' },
+    { key:'fri', label:'FRI' },
+  ];
+
+  const weeks = getTrackerWeeks(startVal, numWeeks);
+
+  const riders = students
+    .filter(s => s.ridesBus && s.grade !== 'Graduated')
+    .sort((a,b) => {
+      const go = GRADE_SORT_ORDER || [];
+      const ai = go.indexOf(a.grade), bi = go.indexOf(b.grade);
+      return ai !== bi ? ai - bi : a.name.localeCompare(b.name);
+    });
+
+  if (!riders.length) {
+    container.innerHTML = '<div class="empty"><div class="e-icon">🚌</div><p>No students are marked as bus riders yet.<br>Open any student account and tick <strong>Rides Bus</strong>.</p></div>';
     return;
   }
 
@@ -2873,55 +2904,119 @@ function renderBusRosters() {
     byGrade[s.grade].push(s);
   });
 
-  // Sort grades in school order
-  const sortedGrades = GRADE_ORDER.filter(g => byGrade[g]);
+  // ── Build table header ──
+  let thead = `<thead>
+    <tr>
+      <th class="th-num" rowspan="2">#</th>
+      <th class="th-name" rowspan="2">STUDENT NAME</th>`;
 
-  container.innerHTML = sortedGrades.map(grade => {
-    const gradeRiders = byGrade[grade].sort((a,b) => a.name.localeCompare(b.name));
-    const rate = getBusRateForGrade(grade);
+  weeks.forEach(w => {
+    thead += `<th colspan="${DAYS.length + 2}" class="week-hdr" style="background:#e8f5e9;color:var(--green)">${w.label.replace('\n','<br>')}</th>`;
+  });
+  thead += `<th rowspan="2" style="background:#c62828;white-space:nowrap">TOTAL<br>ARREARS</th></tr><tr>`;
 
-    const rows = gradeRiders.map((s, i) => {
-      const payment = (busFeePayments[s.id]?.[term]?.[month]) || {};
-      const isPaid  = payment.paid > 0;
-      return `<tr>
-        <td style="width:2rem">${i+1}</td>
-        <td><strong>${s.name}</strong></td>
-        <td>GH₵ ${rate.toFixed(2)}</td>
-        <td>
-          ${isPaid
-            ? `<span style="color:var(--success);font-weight:600">✔ GH₵${payment.paid.toFixed(2)} paid</span>
-               <span style="font-size:.75rem;color:var(--gray-3);margin-left:.4rem">${payment.receiptNo||''}</span>`
-            : `<span style="color:var(--danger);font-weight:600">⚠ Unpaid</span>`}
-        </td>
-        <td class="no-print">
-          ${isPaid
-            ? `<button class="btn btn-sm" style="background:#fce8e6;color:var(--danger);border:1px solid #ef9a9a"
-                onclick="deleteBusPayment('${s.id}','${term}','${month}')">🗑</button>`
-            : `<button class="btn btn-gold btn-sm" onclick="openBusPayModal('${s.id}','${term}','${month}','${grade}')">Pay</button>`}
-        </td>
-      </tr>`;
-    }).join('');
+  weeks.forEach(() => {
+    DAYS.forEach(d => {
+      thead += `<th>${d.label}</th>`;
+    });
+    thead += `<th style="background:#fff8e1;color:#e65100">ARR.</th>`;
+    thead += `<th style="background:#e8f5e9;color:#1B5E20">SETT'D</th>`;
+  });
+  thead += `</tr></thead>`;
 
-    const totalDue  = rate * gradeRiders.length;
-    const totalPaid = gradeRiders.reduce((sum, s) => sum + ((busFeePayments[s.id]?.[term]?.[month])?.paid || 0), 0);
+  // ── Build table body ──
+  let tbody = '<tbody>';
+  const sortedGrades = (GRADE_SORT_ORDER || Object.keys(byGrade)).filter(g => byGrade[g]);
 
-    return `
-      <div style="margin-bottom:1.6rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
-          <h3 style="margin:0;font-size:.95rem;color:var(--green)">${grade} <span style="font-size:.78rem;color:var(--gray-3);font-weight:400">(${gradeRiders.length} riders)</span></h3>
-          <span style="font-size:.84rem;font-weight:600">
-            Collected: <span style="color:var(--green)">GH₵${totalPaid.toFixed(2)}</span>
-            &nbsp;/&nbsp; Due: GH₵${totalDue.toFixed(2)}
-          </span>
-        </div>
-        <table class="fee-table" style="font-size:.85rem">
-          <thead><tr><th>#</th><th>Student</th><th>Monthly Fee</th><th>Status</th><th class="no-print">Action</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
-  }).join('');
+  sortedGrades.forEach(grade => {
+    const gradeRiders = byGrade[grade];
+    const colSpan = 2 + weeks.length * (DAYS.length + 2) + 1;
+
+    // Class section header
+    const gradeLabel = {
+      'Creche':'CRECHE','Nursery 1':'NURSERY 1','Nursery 2':'NURSERY 2',
+      'KG 1':'KG 1','KG 2':'KG 2',
+      'Class 1':'BASIC 1','Class 2':'BASIC 2','Class 3':'BASIC 3',
+      'Class 4':'BASIC 4','Class 5':'BASIC 5','Class 6':'BASIC 6',
+      'JHS Form 1':'JHS 1','JHS Form 2':'JHS 2','JHS Form 3':'JHS 3'
+    }[grade] || grade.toUpperCase();
+
+    tbody += `<tr class="class-hdr"><td colspan="${colSpan}">${gradeLabel} &nbsp;(${gradeRiders.length} riders)</td></tr>`;
+
+    gradeRiders.forEach((s, idx) => {
+      const sid = s.id;
+      const tData = (busTracker[term]?.[sid]) || {};
+
+      tbody += `<tr>
+        <td class="td-num">${idx+1}</td>
+        <td class="td-name">${s.name}</td>`;
+
+      let totalArrears = 0;
+      let prevArr = 0;
+
+      weeks.forEach(w => {
+        const wData = tData[w.key] || {};
+        const dayTotal = DAYS.reduce((sum, d) => sum + (parseFloat(wData[d.key]) || 0), 0);
+        const settled  = parseFloat(wData.sett) || 0;
+        const arrears  = Math.max(0, prevArr + dayTotal - settled);
+        totalArrears = arrears;
+        prevArr = arrears;
+
+        DAYS.forEach(d => {
+          const val = wData[d.key] || '';
+          tbody += `<td class="td-day"><input type="number" min="0" step="0.01"
+            value="${val}" placeholder=""
+            data-sid="${sid}" data-term="${term}" data-week="${w.key}" data-day="${d.key}"
+            onchange="onBusCellChange(this)"
+            onfocus="this.select()"/></td>`;
+        });
+
+        // ARR cell
+        tbody += `<td class="td-arr">${arrears > 0 ? arrears.toFixed(2) : ''}</td>`;
+        // SETT'D cell
+        const settVal = wData.sett || '';
+        tbody += `<td class="td-sett"><input type="number" min="0" step="0.01"
+          value="${settVal}" placeholder=""
+          data-sid="${sid}" data-term="${term}" data-week="${w.key}" data-day="sett"
+          onchange="onBusCellChange(this)"
+          onfocus="this.select()"/></td>`;
+      });
+
+      // Total arrears
+      tbody += `<td class="td-total">${totalArrears > 0 ? 'GH₵'+totalArrears.toFixed(2) : '✔'}</td>`;
+      tbody += `</tr>`;
+    });
+  });
+
+  tbody += '</tbody>';
+
+  container.innerHTML = `<table class="bus-tracker-table">${thead}${tbody}</table>`;
 }
 
+async function onBusCellChange(input) {
+  const sid   = input.dataset.sid;
+  const term  = input.dataset.term;
+  const week  = input.dataset.week;
+  const day   = input.dataset.day;
+  const value = parseFloat(input.value) || null;
+
+  // Update local store
+  if (!busTracker[term]) busTracker[term] = {};
+  if (!busTracker[term][sid]) busTracker[term][sid] = {};
+  if (!busTracker[term][sid][week]) busTracker[term][sid][week] = {};
+  if (value) busTracker[term][sid][week][day] = value;
+  else delete busTracker[term][sid][week][day];
+
+  // Save to Firebase
+  await saveBusTrackerCell(term, sid, week, day, value);
+
+  // Recalculate ARR/totals — re-render the row
+  // (lightweight: just re-render the whole tracker)
+  renderBusTracker();
+  showSync('✓ Saved');
+}
+
+// ─────────────────────────────────────────────────────────────
 // ── Bus payment modal ──
 let _busStudentId = null, _busTerm = null, _busMonth = null, _busGrade = null;
 
@@ -3452,6 +3547,139 @@ function forceSync() {
     toast('⚠️ Could not refresh — check your connection.');
   });
 }
+
+// ── Bus Fee Tracker XLSX ──────────────────────────────────────
+function downloadBusTrackerXLSX() {
+  if (typeof XLSX === 'undefined') return toast('⚠️ Spreadsheet library not loaded.');
+
+  const term      = document.getElementById('bus-term')?.value  || activeTerm;
+  const startDate = document.getElementById('bus-tracker-start')?.value || '';
+  const acYear    = getAcademicYear();
+
+  const riders = students.filter(s => s.ridesBus && s.grade !== 'Graduated');
+  if (!riders.length) return toast('⚠️ No students are marked as bus riders.');
+
+  // Grade order
+  const GRADE_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
+    'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
+    'JHS Form 1','JHS Form 2','JHS Form 3'];
+  const GRADE_LABELS = {
+    'Creche':'CRECHE','Nursery 1':'NUR 1','Nursery 2':'NUR 2',
+    'KG 1':'KG1','KG 2':'KG2',
+    'Class 1':'BASIC 1','Class 2':'BASIC 2','Class 3':'BASIC 3',
+    'Class 4':'BASIC 4','Class 5':'BASIC 5','Class 6':'BASIC 6',
+    'JHS Form 1':'JHS 1','JHS Form 2':'JHS 2','JHS Form 3':'JHS 3'
+  };
+
+  riders.sort((a,b) => {
+    const ai = GRADE_ORDER.indexOf(a.grade), bi = GRADE_ORDER.indexOf(b.grade);
+    return ai !== bi ? ai - bi : a.name.localeCompare(b.name);
+  });
+
+  // Generate week date labels
+  let start = startDate ? new Date(startDate) : new Date();
+  // Align to Monday
+  const day = start.getDay();
+  start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+
+  const weeks = [];
+  for (let w = 0; w < 14; w++) {
+    const ws = new Date(start); ws.setDate(start.getDate() + w*7);
+    const we = new Date(ws);    we.setDate(ws.getDate() + 4);
+    const fmt = d => `${d.getDate()}/${d.getMonth()+1}/${String(d.getFullYear()).slice(-2)}`;
+    weeks.push(`Week ${w+1}: ${fmt(ws)}-${fmt(we)}`);
+  }
+
+  const DAYS = ['MON','TUE','WED','THU','FRI',"ARR.","SETT'D"];
+  const COLS_PER_WEEK = 7;
+
+  function buildSheet(sheetRiders, sheetTitle) {
+    const aoa = [];
+
+    // Row 0: Title
+    const titleRow = [sheetTitle, ...Array(2 + 14*COLS_PER_WEEK + 1).fill('')];
+    aoa.push(titleRow);
+
+    // Row 1: Week headers
+    const weekRow = ['#', 'STUDENT NAME'];
+    for (let w = 0; w < 14; w++) {
+      weekRow.push(weeks[w]);
+      weekRow.push(...Array(COLS_PER_WEEK-1).fill(''));
+    }
+    weekRow.push('TOTAL ARREARS');
+    aoa.push(weekRow);
+
+    // Row 2: Day headers
+    const dayRow = ['', ''];
+    for (let w = 0; w < 14; w++) dayRow.push(...DAYS);
+    dayRow.push('GH₵');
+    aoa.push(dayRow);
+
+    // Group by grade
+    const byGrade = {};
+    sheetRiders.forEach(s => {
+      if (!byGrade[s.grade]) byGrade[s.grade] = [];
+      byGrade[s.grade].push(s);
+    });
+
+    GRADE_ORDER.filter(g => byGrade[g]).forEach(grade => {
+      // Class section header row
+      const hdrRow = ['', GRADE_LABELS[grade] || grade.toUpperCase()];
+      hdrRow.push(...Array(14*COLS_PER_WEEK + 1).fill(''));
+      aoa.push(hdrRow);
+
+      byGrade[grade].forEach((s, idx) => {
+        const name = (s.name || '').split(' ')[0].toUpperCase();
+        const sRow = [idx+1, name];
+        // 14 weeks × 7 cols = 98 empty cells
+        sRow.push(...Array(14*COLS_PER_WEEK).fill(''));
+        sRow.push(''); // TOTAL ARREARS (blank — user fills manually)
+        aoa.push(sRow);
+      });
+
+      aoa.push(Array(2 + 14*COLS_PER_WEEK + 1).fill('')); // blank row
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Column widths
+    ws['!cols'] = [
+      {wch:4}, {wch:22},
+      ...Array(14*COLS_PER_WEEK).fill({wch:7}),
+      {wch:12}
+    ];
+
+    return ws;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // Main sheet
+  XLSX.utils.book_append_sheet(wb,
+    buildSheet(riders, `BUS FEE TRACKER — ${term} ${acYear}`),
+    `${term} ${acYear}`.slice(0,31)
+  );
+
+  // Route sheets by area of residence
+  const routes = {};
+  riders.forEach(s => {
+    const area = (s.areaOfResidence || 'OTHER').toUpperCase().trim();
+    if (!routes[area]) routes[area] = [];
+    routes[area].push(s);
+  });
+  Object.entries(routes).sort().forEach(([area, areaRiders]) => {
+    if (areaRiders.length === 0) return;
+    XLSX.utils.book_append_sheet(wb,
+      buildSheet(areaRiders, `${area} — ${term}`),
+      area.slice(0,31)
+    );
+  });
+
+  XLSX.writeFile(wb, `FRIA_Bus_Tracker_${term.replace(' ','_')}_${acYear.replace('/','_')}.xlsx`);
+  toast('✅ Bus fee tracker downloaded!');
+}
+
+// ─────────────────────────────────────────────────────────────
 function toggleOwing() {
   showOwingOnly = !showOwingOnly;
   const btn = document.getElementById('owing-toggle');
