@@ -1,0 +1,78 @@
+FRIA STUDENT ACCOUNTS — APP VERSIONS
+====================================
+
+THE ONLY FILE YOU NEED IS:   index.html      (this is v4.1, the newest)
+
+To put it live:
+  1. Go to github.com/stacy-coder/FRIA
+  2. Add file  ->  Upload files
+  3. Drag index.html in
+  4. Scroll down and click the green "Commit changes"
+  5. Wait a minute, then hard refresh stacy-coder.github.io/FRIA
+     The footer should read v4.1
+
+Then, in the app:
+  Settings -> Import Term Bills -> choose FRIA-bills-2026-2027-Term1.json
+  Pick Term 1. It shows you what it will do before it writes anything.
+  257 bills, GHS 235,191.43.
+
+  Settings -> Bus Fee Rates -> check it reads 10 per day.
+
+
+WHAT IS IN THIS FOLDER
+----------------------
+index.html                       v4.1, the one to upload
+index-v4.1.html                  same file, named by version
+index-v4.0.html                  what is on GitHub right now
+index-v3.9.html                  earlier step
+index-v3.8.html                  earlier step
+index-v3.7.html                  earlier step
+FRIA-bills-2026-2027-Term1.json  the 257 Term 1 bills, for the importer
+
+The older files are kept only so you can go back if something looks wrong.
+Each version contains everything before it, so uploading v4.1 gets you all of it.
+
+
+WHAT CHANGED, NEWEST FIRST
+--------------------------
+v4.1  Import a whole term's bills from your class workbooks.
+      New fee lines so a bill on screen reads like the paper bill:
+      PTA (Annual Package), PTA Non Attendance Fee, Beacon of Light,
+      Missing Library Book, BECE Expense, Saturday Classes.
+      Scholarships stored as a percentage off full tuition, so the reason stays visible.
+
+v4.0  Arrears and extra charges can actually be paid. Before this, they were added
+      to what a student owed but no payment could ever be applied to them, so those
+      bills could never reach zero.
+      Arrears can now be typed in, corrected and cleared. Carry Forward no longer
+      doubles the debt when clicked twice.
+
+v3.9  Bus fees charged by the day at GHS 10, not by the month.
+      Day 10, week 50, month 200 or 180 paid in advance, term 700.
+
+v3.8  Sibling, early payment and promo discounts come off School Tuition only,
+      not all twelve fee items. A 10% sibling discount was taking GHS 161.50
+      instead of GHS 100.
+      The Add Extra Charge panel is visible on the account instead of buried
+      inside the collapsed fee breakdown.
+
+v3.7  TOTAL ARREARS on the bus sheets no longer shrinks when you narrow the
+      "Show Weeks" view. It was quietly dropping weeks out of the totals.
+
+v3.6  Bus fee payments and rates save and reload properly.
+      Bus Fee Rates added to Settings. Bus Fees panel added to each rider's account.
+
+
+THINGS WORTH CHECKING ONCE IT IS UP
+-----------------------------------
+1. Arrears figures. The Carry Forward button was doubling silently before v4.0,
+   so any unusually large arrears figure is worth a second look. You can correct
+   them directly on the student's account now.
+
+2. Balances will rise for students on a sibling or scholarship discount, because
+   the discount now comes off tuition only. That is the correction landing, not a
+   new fault. Worth warning whoever answers the phone.
+
+3. The bill importer will also move students into the class shown on their bill,
+   which promotes the whole school into 2026-2027. There is a checkbox if you
+   would rather do that separately.
