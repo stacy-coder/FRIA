@@ -927,6 +927,7 @@
   <button class="tab-btn" onclick="showTab('reports')">📊 Reports</button>
   <button class="tab-btn" onclick="showTab('bus')">🚌 Bus Fees</button>
   <button class="tab-btn" onclick="showTab('store')">🛒 FRIA Store</button>
+  <button class="tab-btn" onclick="showTab('reading')">📖 Reading Pathways</button>
   <button class="tab-btn" onclick="showTab('settings')">⚙️ Settings</button>
 </div>
 
@@ -1674,7 +1675,8 @@
       </p>
       <div id="user-list-container"></div>
       <div style="margin-top:1.2rem;background:var(--gray-1);border-radius:10px;padding:1rem 1.2rem">
-        <div style="font-size:.84rem;font-weight:700;color:var(--green);margin-bottom:.8rem">➕ Add New User</div>
+        <div style="font-size:.84rem;font-weight:700;color:var(--green);margin-bottom:.3rem">➕ Pre-approve a staff member</div>
+        <p style="font-size:.8rem;color:var(--gray-3);margin:0 0 .8rem">Type the part of their school email before @cormghana.org. They sign in with Google as usual and go straight in, with no approval step. Anyone not pre-approved appears above as a request.</p>
         <div class="form-grid">
           <div>
             <label>Username</label>
@@ -1687,15 +1689,8 @@
               <option value="admin">Admin (full access)</option>
             </select>
           </div>
-          <div>
-            <label>Password</label>
-            <div class="pw-wrap">
-              <input type="password" id="new-user-pw" placeholder="Set a password"/>
-              <button class="pw-toggle" onclick="togglePwVis('new-user-pw',this)" type="button">👁️</button>
-            </div>
-          </div>
         </div>
-        <button class="btn btn-primary btn-sm" style="margin-top:.8rem" onclick="addUser()">➕ Add User</button>
+        <button class="btn btn-primary btn-sm" style="margin-top:.8rem" onclick="addUser()">➕ Pre-approve</button>
       </div>
     </div>
 
@@ -1705,6 +1700,9 @@
       <button class="btn btn-danger" onclick="resetSystem()">🗑️ Delete All Data</button>
     </div>
   </div>
+
+<!-- ════════════ READING PATHWAYS ════════════ -->
+<div id="tab-reading" class="section"><div id="rp-root"></div></div>
 
 </main>
 
@@ -1769,6 +1767,25 @@ const dbGet = path => db.ref(path).once('value').then(s => s.val());
 const dbSet = (path, value) => db.ref(path).set(value);
 // Firebase keys cannot contain . # $ / [ ] — sanitise student IDs for storage
 const fbKey = id => String(id||'').replace(/[.#$\/\[\]]/g, '_');
+
+// ── Sign-in is limited to school Google accounts ──
+// This is the friendly first check. The real lock is the Firebase database rules,
+// which refuse any account outside @cormghana.org whatever runs in the browser.
+const ALLOWED_DOMAIN = 'cormghana.org';
+function isSchoolAccount(u) {
+  const email = String((u && u.email) || '').toLowerCase();
+  return !!u && u.emailVerified !== false && email.endsWith('@' + ALLOWED_DOMAIN);
+}
+async function refuseSignIn(message) {
+  try { await auth.signOut(); } catch (e) {}
+  currentUser = null;
+  sessionStorage.removeItem('friaSession');
+  hideLoading();
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('auth-error').textContent = message;
+}
+const notSchoolMsg = email => `${email || 'That account'} is not a school account. Please sign in with your @${ALLOWED_DOMAIN} Google account.`;
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // ─────────────────────────────────────────────────────────
 
 // ── Loading screen helpers ────────────────────────────────
@@ -1801,17 +1818,21 @@ async function doGoogleLogin() {
 
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    // Domain restriction removed for testing
+    // 'hd' makes Google offer @cormghana.org accounts; it is only a hint, so check below
+    provider.setCustomParameters({ hd: ALLOWED_DOMAIN, prompt: 'select_account' });
     const result = await auth.signInWithPopup(provider);
-    const email  = result.user.email;
-
-    // Email domain check removed for testing
+    if (!isSchoolAccount(result.user)) {
+      await refuseSignIn(notSchoolMsg(result.user.email));
+      throw { code: 'fria/not-school-account' };
+    }
 
     // User authenticated — profile loaded in onAuthStateChanged
     // (onAuthStateChanged fires automatically after signInWithPopup)
 
   } catch(err) {
-    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+    if (err.code === 'fria/not-school-account') {
+      // Message already shown by refuseSignIn
+    } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
       // User closed popup — not an error
     } else if (err.code === 'auth/popup-blocked') {
       errEl.textContent = 'Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.';
@@ -1840,7 +1861,9 @@ async function doLogout() {
 // ── Load users list from /users node ──
 
 async function loadUsers() {
-  const data = await dbGet('users');
+  // Only admins may read the staff list (database rules); staff simply see none
+  let data = null;
+  try { data = await dbGet('users'); } catch (e) { return []; }
   if (!data) return [];
   return Object.entries(data).map(([uid, u]) => ({ ...u, uid }));
 }
@@ -1881,23 +1904,47 @@ function togglePwVis(inputId, btn) {
 
 // ── User Management ──
 async function renderUserList() {
-  const users = await loadUsers();
+  const all = await loadUsers();
   const el = document.getElementById('user-list-container');
   if (!el) return;
-  el.innerHTML = users.length === 0
+  const waiting = all.filter(u => u.pending && !u.disabled);
+  const users = all.filter(u => !(u.pending && !u.disabled));
+  let pre = {};
+  if (currentUser && currentUser.role === 'admin') { try { pre = (await dbGet('pendingUsers')) || {}; } catch (e) { pre = {}; } }
+  const signedUp = new Set(all.map(u => preapprovalKey(u.username)));
+  const preList = Object.entries(pre).filter(([k]) => !signedUp.has(k));
+  const waitingHtml = !waiting.length ? '' : `
+    <div style="background:#fff8e1;border:1px solid var(--gold);border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem">
+      <div style="font-weight:700;color:#8a6a00;margin-bottom:.5rem">👋 Waiting for approval (${waiting.length})</div>
+      ${waiting.map(u => `<div class="user-row">
+        <div class="user-avatar staff">${escHtml(String(u.name || u.username || '?')[0].toUpperCase())}</div>
+        <div class="user-info"><div class="u-name">${escHtml(u.name || u.username)}</div>
+          <div class="u-role">${escHtml(u.email || '')}${u.requestedOn ? ' · asked ' + escHtml(new Date(u.requestedOn).toLocaleDateString('en-GB')) : ''}</div></div>
+        <select id="approve-role-${escHtml(u.uid)}" style="width:auto" aria-label="Role"><option value="staff">Staff</option><option value="admin">Admin</option></select>
+        <button class="btn btn-primary btn-sm" onclick="approveUser('${escHtml(u.uid)}')">✅ Approve</button>
+        <button class="btn btn-danger btn-sm" onclick="declineUser('${escHtml(u.uid)}')">Decline</button>
+      </div>`).join('')}
+    </div>`;
+  const preHtml = !preList.length ? '' : `
+    <div style="font-size:.8rem;color:var(--gray-3);margin:1rem 0 .3rem;font-weight:700">Pre-approved, not signed in yet</div>
+    ${preList.map(([k, p]) => `<div class="user-row">
+      <div class="user-info"><div class="u-name">${escHtml(p.username)}@${ALLOWED_DOMAIN}</div><div class="u-role">Will join as ${escHtml(p.role)}</div></div>
+      <button class="btn btn-sm" onclick="removePreapproval('${escHtml(k)}')">Cancel</button></div>`).join('')}`;
+  el.innerHTML = waitingHtml + (users.length === 0
     ? '<p style="color:var(--gray-3);font-size:.84rem">No users yet.</p>'
     : users.map(u => {
         const isMe = currentUser && u.username === currentUser.username;
         return `<div class="user-row">
-          <div class="user-avatar ${u.role === 'staff' ? 'staff' : ''}">${(u.name||u.username)[0].toUpperCase()}</div>
+          <div class="user-avatar ${u.role === 'staff' ? 'staff' : ''}">${escHtml(String(u.name||u.username||'?')[0].toUpperCase())}</div>
           <div class="user-info">
-            <div class="u-name">${u.name || u.username} ${isMe ? '<span style="font-size:.72rem;color:var(--gray-3)">(You)</span>' : ''}</div>
-            <div class="u-role">${u.username}@cormghana.org</div>
+            <div class="u-name">${escHtml(u.name || u.username)} ${isMe ? '<span style="font-size:.72rem;color:var(--gray-3)">(You)</span>' : ''}</div>
+            <div class="u-role">${escHtml(u.email || (u.username + '@cormghana.org'))}</div>
           </div>
-          <span class="role-badge ${u.role === 'admin' ? 'role-admin' : 'role-staff'}">${u.role}</span>
-          ${!isMe ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${u.uid}')">🗑️ Remove</button>` : '<span style="font-size:.76rem;color:var(--gray-3)">Current user</span>'}
+          ${u.disabled ? '<span class="role-badge" style="background:var(--gray-2);color:var(--gray-3)">removed</span>'
+                       : `<span class="role-badge ${u.role === 'admin' ? 'role-admin' : 'role-staff'}">${escHtml(u.role)}</span>`}
+          ${u.disabled ? '' : !isMe ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${escHtml(u.uid)}')">🗑️ Remove</button>` : '<span style="font-size:.76rem;color:var(--gray-3)">Current user</span>'}
         </div>`;
-      }).join('');
+      }).join('')) + preHtml;
 }
 
 async function addUser() {
@@ -1924,12 +1971,51 @@ async function addUser() {
   } else {
     // Pre-register — they'll get full profile on first Google login
     // We store a placeholder keyed by username (not UID yet)
-    const placeholderKey = 'pending_' + username.replace(/\./g, '_');
+    const placeholderKey = preapprovalKey(username);
     await dbSet('pendingUsers/' + placeholderKey, { username, role, email: username + '@cormghana.org' });
     document.getElementById('new-user-name').value = '';
     renderUserList();
-    toast(`✅ @${username} pre-registered as ${role}. Their role will apply when they first sign in.`);
+    toast(`✅ @${username} pre-approved as ${role}. They can sign in with Google now.`);
   }
+}
+
+// Pre-approval entries are keyed by username: 'pending_' + username with dots as underscores
+// (the database rules build the same key from the signed-in email).
+const preapprovalKey = username => 'pending_' + String(username || '').toLowerCase().replace(/\./g, '_');
+
+async function notifyPendingApprovals() {
+  if (!currentUser || currentUser.role !== 'admin') return;
+  const waiting = (await loadUsers()).filter(u => u.pending && !u.disabled);
+  const btn = document.querySelector(`.tab-btn[onclick*="showTab('settings')"]`);
+  if (btn) btn.textContent = waiting.length ? `⚙️ Settings (${waiting.length})` : '⚙️ Settings';
+  if (waiting.length) toast(`👋 ${waiting.length} ${waiting.length === 1 ? 'person is' : 'people are'} waiting for approval. See Settings → User Management.`);
+}
+
+async function approveUser(uid) {
+  if (!requireAdmin('approve users')) return;
+  const role = document.getElementById('approve-role-' + uid)?.value === 'admin' ? 'admin' : 'staff';
+  const profile = await dbGet('users/' + uid);
+  if (!profile) return toast('⚠️ That request no longer exists.');
+  if (role === 'admin' && !confirm(`Give ${profile.name || profile.username} full admin access?`)) return;
+  await dbRef('users/' + uid).update({ pending: null, requestedOn: null, role, approvedOn: new Date().toISOString(), approvedBy: currentUser.username });
+  toast(`✅ ${profile.name || profile.username} approved as ${role}. They can sign in now.`);
+  renderUserList(); notifyPendingApprovals();
+}
+
+async function declineUser(uid) {
+  if (!requireAdmin('decline requests')) return;
+  const profile = await dbGet('users/' + uid);
+  if (!profile) return;
+  if (!confirm(`Decline access for ${profile.email || profile.username}?`)) return;
+  await dbRef('users/' + uid).update({ pending: null, disabled: true, disabledOn: new Date().toISOString(), disabledBy: currentUser.username });
+  toast('Request declined.');
+  renderUserList(); notifyPendingApprovals();
+}
+
+async function removePreapproval(key) {
+  if (!requireAdmin('manage users')) return;
+  await dbRef('pendingUsers/' + key).remove();
+  renderUserList();
 }
 
 async function deleteUser(uid) {
@@ -1937,11 +2023,12 @@ async function deleteUser(uid) {
   const profile = await dbGet('users/' + uid);
   if (!profile) return toast('⚠️ User not found.');
   if (profile.username === currentUser?.username) return toast('⚠️ You cannot delete your own account.');
-  if (!confirm('Remove user "@' + profile.username + '"? They will no longer be able to log in.')) return;
-  // Remove from database (Firebase Auth deletion requires Admin SDK — we just remove the profile)
-  await dbRef('users/' + uid).remove();
+  if (!confirm('Remove user "@' + profile.username + '"? They will no longer be able to sign in.')) return;
+  // Keep the profile and mark it disabled. The database rules refuse a disabled account,
+  // and it cannot re-create itself as a new staff member on its next sign-in.
+  await dbRef('users/' + uid).update({ disabled: true, disabledOn: new Date().toISOString(), disabledBy: currentUser?.username || '' });
   renderUserList();
-  toast('🗑️ @' + profile.username + ' removed. Note: ask your admin to also delete them from Firebase Console if needed.');
+  toast('🗑️ @' + profile.username + ' removed. They can no longer sign in. To restore them, add their username again.');
 }
 
 // ─────────────────────────────────────────────
@@ -2423,6 +2510,7 @@ function showTab(id) {
   if (id === 'settings')  { renderFeeScheduleInputs(); renderScheduleOverview(); renderUserList(); renderFeeCatsList(); renderPromotionStatus(); renderEarlyPayDiscountUI(); renderBusRatesUI(); }
   if (id === 'import')    resetImport();
   if (id === 'store')     initStore();
+  if (id === 'reading')   rpRender();
 }
 
 // ─────────────────────────────────────────────
@@ -2488,18 +2576,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
           document.getElementById('loading-msg').textContent = 'Loading your data…';
 
-          // Domain restriction removed for testing
+          // Only school accounts get past this point
+          if (!isSchoolAccount(firebaseUser)) {
+            await refuseSignIn(notSchoolMsg(firebaseUser.email));
+            return;
+          }
 
           // Get or create user profile in database
           let profile = await dbGet('users/' + firebaseUser.uid);
 
           if (!profile) {
-            // First time this Google user has logged in
-            // Create a default 'staff' profile — admin can promote them later
-            const username = firebaseUser.email.replace('@cormghana.org', '');
+            // First sign-in. Staff an admin pre-approved (Settings → User Management) go straight in
+            // with the role the admin chose; everyone else is saved as a request awaiting approval.
+            const email = firebaseUser.email.toLowerCase();
+            const username = email.replace('@' + ALLOWED_DOMAIN, '');
             const displayName = firebaseUser.displayName || username;
-            profile = { username, role: 'staff', name: displayName, email: firebaseUser.email };
+            let pre = null;
+            try { pre = await dbGet('pendingUsers/' + preapprovalKey(username)); } catch (e) { pre = null; }
+            profile = { username, role: pre && pre.role === 'admin' ? 'admin' : 'staff', name: displayName, email: firebaseUser.email };
+            if (!pre) { profile.pending = true; profile.requestedOn = new Date().toISOString(); }
             await dbSet('users/' + firebaseUser.uid, profile);
+          }
+
+          if (profile.disabled) {
+            await refuseSignIn('Your access to the FRIA system has been removed. Please speak to the school admin.');
+            return;
+          }
+          if (profile.pending) {
+            await refuseSignIn(`Your request to use the FRIA system has been sent. An admin needs to approve ${profile.email || 'your account'} before you can sign in. Please try again once they have.`);
+            return;
           }
 
           currentUser = { uid: firebaseUser.uid, ...profile };
@@ -2516,6 +2621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await loadFeeCats();
           await loadEarlyPayDiscount();
           await loadBusTracker();
+          loadReadingPathways();
           await seedIfEmpty();
           hideLoading();
           checkAndRunPromotion();
@@ -2524,6 +2630,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (_bm) _bm.value = new Date().toLocaleString('en',{month:'long'});
           document.getElementById('auth-screen').classList.add('hidden');
           renderDashboard();
+          notifyPendingApprovals();
 
         } catch(e) {
           console.error('Auth state error:', e);
@@ -8044,5 +8151,669 @@ function toast(msg) {
     </div>
   </div>
 </div>
+<!-- ════════════ READING PATHWAYS MODULE ════════════
+     FRIA-GORT raw scores → Tier 1/2/3 → Tier 3 reader profile → Reading Pathways group,
+     further-testing prompts, coach assignment and month-by-month progress.
+     Data lives at appData/readingPathways (scores, coaches, assign, override).
+     Rules follow the FRIA Reading Pathways documents (Examiner Manual §7B/§9,
+     From FRIA-GORT to Reader Profile App. A, Coaching Pack §3/§6). -->
+<style>
+:root{
+  --rp-t1:#1a6b3a; --rp-t1bg:#e3f1e7; --rp-t2:#8a6a00; --rp-t2bg:#fbf0c9; --rp-t3:#b03a2e; --rp-t3bg:#f9e1dd;
+  --rp-need:#8a4b00; --rp-needbg:#fdebd3;
+}
+.rp-subnav{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem}
+.rp-subnav button{border:1px solid var(--gray-2);background:var(--white);color:var(--text);border-radius:20px;padding:.4rem .95rem;font:inherit;font-size:.85rem;font-weight:600;cursor:pointer}
+.rp-subnav button.on{background:var(--green);border-color:var(--green);color:#fff}
+.rp-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:.9rem}
+.rp-bar select,.rp-bar input{width:auto;min-width:9rem}
+.rp-chipbar{display:flex;flex-wrap:wrap;gap:.35rem}
+.rp-chipbar button{border:1px solid var(--gray-2);background:var(--white);border-radius:14px;padding:.25rem .7rem;font:inherit;font-size:.8rem;cursor:pointer;color:var(--text)}
+.rp-chipbar button.on{background:var(--gold);border-color:var(--gold);color:#fff}
+.rp-list{border:1px solid var(--gray-2);border-radius:12px;overflow:hidden;background:var(--white)}
+.rp-row{display:grid;grid-template-columns:1fr auto;gap:.6rem;align-items:center;padding:.65rem .9rem;border:0;border-top:1px solid var(--gray-2);width:100%;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.rp-row:first-child{border-top:0}
+.rp-row:hover{background:var(--gray-1)}
+.rp-row .n{font-weight:700}
+.rp-row .m{font-size:.78rem;color:var(--gray-3)}
+.rp-chips{display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end}
+.rp-chip{font-size:.74rem;padding:.12rem .55rem;border-radius:10px;background:var(--gray-1);color:var(--text);white-space:nowrap;font-weight:600}
+.rp-chip.t1{background:var(--rp-t1bg);color:var(--rp-t1)}.rp-chip.t2{background:var(--rp-t2bg);color:var(--rp-t2)}.rp-chip.t3{background:var(--rp-t3bg);color:var(--rp-t3)}
+.rp-chip.need{background:var(--rp-needbg);color:var(--rp-need)}
+.rp-note{font-size:.8rem;color:var(--gray-3)}
+.rp-warn{font-size:.82rem;background:var(--rp-needbg);color:var(--rp-need);border-radius:8px;padding:.5rem .7rem;margin-top:.5rem}
+#rp-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;padding:1rem}
+#rp-modal .box{background:#fff;border-radius:16px;width:min(96vw,980px);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)}
+#rp-modal .hd{padding:1rem 1.4rem;border-bottom:1px solid var(--gray-2);display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}
+#rp-modal .hd h2{font-family:'Playfair Display',serif;color:var(--green);margin:0;font-size:1.25rem}
+#rp-modal .bd{display:grid;grid-template-columns:290px 1fr;overflow:auto;flex:1;min-height:0}
+#rp-modal .en{padding:1rem 1.4rem;border-right:1px solid var(--gray-2)}
+#rp-modal .rs{padding:1rem 1.4rem}
+#rp-modal .ft{padding:.8rem 1.4rem;border-top:1px solid var(--gray-2);display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;align-items:center}
+#rp-modal label{display:block;margin:.7rem 0 .25rem}
+#rp-modal .num{font-size:1.1rem}
+#rp-modal .num[readonly]{background:var(--gray-1);color:var(--gray-3)}
+#rp-modal .num.bad{border-color:var(--danger)}
+.rp-seg{display:flex;gap:.35rem}
+.rp-seg button{flex:1;padding:.5rem 0;border:1px solid var(--gray-2);background:#fff;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
+.rp-seg button.on{background:var(--green);border-color:var(--green);color:#fff}
+.rp-tier{border-radius:12px;padding:.8rem 1rem;margin-bottom:.8rem}
+.rp-tier.t1{background:var(--rp-t1bg);color:var(--rp-t1)}.rp-tier.t2{background:var(--rp-t2bg);color:var(--rp-t2)}.rp-tier.t3{background:var(--rp-t3bg);color:var(--rp-t3)}.rp-tier.none{background:var(--gray-1);color:var(--gray-3)}
+.rp-tier .big{font-size:1.3rem;font-weight:800}
+.rp-tier .sm{font-size:.84rem;color:var(--text)}
+.rp-dials{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin:.6rem 0 .9rem}
+.rp-dial{border:1px solid var(--gray-2);border-radius:8px;padding:.45rem .55rem}
+.rp-dial .l{font-size:.72rem;color:var(--gray-3);text-transform:uppercase;letter-spacing:.03em}
+.rp-dial .v{font-size:1.1rem;font-weight:800;font-variant-numeric:tabular-nums}
+.rp-meter{height:5px;background:var(--gray-2);border-radius:3px;margin-top:.3rem;overflow:hidden}
+.rp-meter i{display:block;height:100%;background:var(--green)}
+.rp-h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-3);margin:.9rem 0 .35rem;font-weight:700}
+.rp-prof{border:1px solid var(--gray-2);border-radius:10px;padding:.7rem .9rem}
+.rp-prof .pn{font-size:1.1rem;font-weight:800;color:var(--text)}
+.rp-prof .why{font-size:.83rem;color:var(--gray-3);margin-top:.25rem}
+.rp-pill{display:inline-block;font-size:.76rem;padding:.12rem .5rem;border-radius:6px;background:var(--gray-1);border:1px solid var(--gray-2);margin:.35rem .3rem 0 0}
+.rp-test{border:1px solid var(--gray-2);border-left:4px solid var(--rp-need);border-radius:8px;padding:.6rem .8rem;margin-top:.55rem;font-size:.85rem}
+.rp-test.done{border-left-color:var(--rp-t1)}.rp-test.opt{border-left-color:var(--gray-2)}
+.rp-test .tt{font-weight:700;display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
+.rp-test .st{font-size:.72rem;padding:.05rem .5rem;border-radius:10px;background:var(--rp-needbg);color:var(--rp-need)}
+.rp-test.done .st{background:var(--rp-t1bg);color:var(--rp-t1)}.rp-test.opt .st{background:var(--gray-1);color:var(--gray-3)}
+.rp-test ol,.rp-test ul{margin:.35rem 0 .35rem 1.1rem}
+.rp-test .inl{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.4rem}
+.rp-test .inl input{width:4.5rem}.rp-test .inl select{width:auto}
+.rp-tbl{width:100%;border-collapse:collapse;font-size:.84rem}
+.rp-tbl th{background:var(--green);color:#fff;text-align:left;padding:.45rem .5rem;font-weight:600;white-space:nowrap}
+.rp-tbl td{border-bottom:1px solid var(--gray-2);padding:.4rem .5rem;vertical-align:top}
+.rp-scroll{overflow-x:auto}
+.rp-cell{display:inline-block;min-width:2.6rem;text-align:center;border-radius:6px;padding:.1rem .3rem;font-weight:700;font-variant-numeric:tabular-nums}
+.rp-cell.t1{background:var(--rp-t1bg);color:var(--rp-t1)}.rp-cell.t2{background:var(--rp-t2bg);color:var(--rp-t2)}.rp-cell.t3{background:var(--rp-t3bg);color:var(--rp-t3)}
+.rp-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.8rem}
+.rp-group{border:1px solid var(--gray-2);border-radius:12px;padding:.75rem .9rem;background:#fff}
+.rp-group h4{margin:0 0 .15rem;font-size:.95rem}
+.rp-group ul{margin:.4rem 0;padding-left:1.1rem;font-size:.85rem}
+.rp-group select{margin-top:.3rem}
+@media (max-width:760px){
+  #rp-modal .bd{grid-template-columns:1fr}
+  #rp-modal .en{border-right:0;border-bottom:1px solid var(--gray-2)}
+  .rp-dials{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+
+<script>
+// ═════════════════════════════════════════════════════════════
+// READING PATHWAYS
+// ═════════════════════════════════════════════════════════════
+const RP_PATH = 'appData/readingPathways';
+const RP_MONTHS = [['2026-09','Sep 2026'],['2026-10','Oct 2026'],['2026-11','Nov 2026'],['2026-12','Dec 2026'],['2027-01','Jan 2027'],['2027-02','Feb 2027'],
+                   ['2027-03','Mar 2027'],['2027-04','Apr 2027'],['2027-05','May 2027'],['2027-06','Jun 2027'],['2027-07','Jul 2027']];
+// FRIA-GORT covers Grades 3–8 (Examiner Manual §2): Class 3 … JHS Form 2
+const RP_GRADES = {'Class 3':3,'Class 4':4,'Class 5':5,'Class 6':6,'JHS Form 1':7,'JHS Form 2':8};
+const RP_GNAME = g => g <= 6 ? 'Class ' + g : 'JHS Form ' + (g - 6);
+// Examiner Manual §7B conversion tables: [CRS, ORI] rows for Grade 3, Grades 4–5, Grades 6–8
+const RP_ORI = [[[0,40],[5,42],[10,43],[15,45],[20,47],[25,48],[30,50],[35,52],[40,53],[45,55],[50,57],[55,58],[60,60],[65,62],[70,63],[75,65],[80,67],[85,68],[90,70],[95,72],[100,73],[105,75],[110,77],[115,78],[120,80],[125,82],[130,83],[133,84],[134,85],[135,85],[140,87],[145,88],[150,90],[155,92],[160,93],[165,95],[170,97],[175,98],[178,99],[179,100],[180,100],[185,105],[190,110],[195,115],[200,120],[205,125],[210,130],[215,135],[220,140],[225,145],[230,150],[235,155],[240,160]],[[30,40],[35,42],[40,44],[45,46],[50,48],[55,50],[60,51],[65,53],[70,55],[75,57],[80,59],[85,61],[90,63],[95,65],[100,67],[105,69],[110,70],[115,72],[120,74],[125,76],[130,78],[135,80],[140,82],[145,84],[146,84],[147,85],[150,86],[155,88],[160,90],[165,91],[170,93],[175,95],[180,97],[185,99],[186,99],[187,100],[190,103],[195,109],[200,114],[205,120],[210,126],[215,131],[220,137],[225,143],[230,149],[235,154],[240,160]],[[60,40],[65,42],[70,44],[75,47],[80,49],[85,51],[90,53],[95,56],[100,58],[105,60],[110,62],[115,64],[120,67],[125,69],[130,71],[135,73],[140,76],[145,78],[150,80],[155,82],[160,84],[161,85],[165,87],[170,89],[175,91],[180,93],[185,96],[190,98],[193,99],[194,100],[195,100],[200,107],[205,113],[210,120],[215,127],[220,133],[225,140],[230,147],[235,153],[240,160]]];
+// Class reading periods, from FRIA_AllClass_B1-B9_FINAL_2026-27 (minutes after midnight)
+const RP_SLOTS = {"3":{"Mon":[[510,540],[585,630],[795,825]],"Tue":[[510,540],[750,780]],"Wed":[],"Thu":[[510,540]],"Fri":[[510,540]]},"4":{"Mon":[[585,630]],"Tue":[[555,600]],"Wed":[[585,630]],"Thu":[[540,585]],"Fri":[[540,585]]},"5":{"Mon":[],"Tue":[[555,585],[765,795]],"Wed":[],"Thu":[[555,585]],"Fri":[[555,585],[825,855]]},"6":{"Mon":[[555,585],[705,735]],"Tue":[[555,585]],"Wed":[],"Thu":[[555,585]],"Fri":[[555,585]]},"7":{"Mon":[[600,630]],"Tue":[[600,630]],"Wed":[],"Thu":[],"Fri":[[600,630],[825,885]]},"8":{"Mon":[[600,630]],"Tue":[[600,630]],"Wed":[[720,750]],"Thu":[[600,630]],"Fri":[[600,630]]}};
+// Cut-points (proposed values awaiting leadership sign-off are marked *)
+const RP_CFG = { T1:100, T2:85, MR:80, MA:80, MF:160, MC:80,
+  FL:.40, CLW:.40, FH:.55, AL:.50, RL:.50, AS:.60,
+  LS:5, LW:3,          // listening Strong / Watch (*)
+  GSD:5, GSG:2,        // group sizes: decoding & fluency lines / Global Readers (*)
+  OA:.25 };            // flag 1:1 when accuracy is below this (* not in the documents)
+const RP_PROF = {
+  P1:{name:'Labored Reader', need:'Fluency, through repeated reading', line:'FLU', where:'Fluency routine (Fluency Training for Teachers); profile lesson suite, Labored Reader set', caution:'Do not treat slowness as a decoding problem.'},
+  P2:{name:'Guesser', need:'Accuracy, decoding-first', line:'DEC', where:'Decoding-first lessons in the profile lesson suite; the Gap Pack', caution:'Speed is not the win; an accurate slow reader is progress.'},
+  P3:{name:'Word Caller', need:'Comprehension while reading', line:'FLU', where:'Comprehension-while-reading lessons in the profile lesson suite', caution:'Never push for more speed; the missing thing is meaning.'},
+  P4:{name:'Bottleneck', need:'Systematic decoding', line:'DEC', where:'Gap Pack and Decoding Curriculum Crosswalk; JHS Bottleneck Reading Curriculum for JHS', caution:'Use controlled text, not predictable levelled text.'},
+  P5:{name:'Global Reader', need:'Decoding and language together, most intensive', line:'GLB', where:'Decoding as for the Bottleneck plus the daily language strand; smallest group or one-on-one', caution:'Language is genuinely part of the work; expect slower gains held steadily.'},
+  P6:{name:'Emerging Reader', need:'Volume plus a light targeted boost', line:'DEC', where:'Reading volume with a light targeted boost; phonemic awareness and early decoding where the screen points', caution:'Do not over-diagnose; re-profile soon.'}
+};
+const RP_LINE = {DEC:'Decoding line', FLU:'Fluency & meaning line', GLB:'Decoding line (Global Readers)'};
+const RP_PA = {rhyme:'Struggles with rhyme and first sound|Begin at the larger units: rhyme, syllables, first sounds',
+  blend:'Rhyme secure; blending or segmenting shaky|Focus the routine on blending, then segmenting',
+  manip:'Blends and segments well; manipulation shaky|Nearly ready: add letters and move towards decoding',
+  secure:'All tasks secure|Sound foundation in place: route to the decoding and fluency strands'};
+
+let rpData = { scores:{}, coaches:{}, assign:{ groups:{}, oneToOne:{} }, override:{} };
+let rpLoaded = false, rpListening = false;
+let rpView = 'enter', rpCls = 'all', rpQuery = '', rpMonth = null, rpCur = null;
+
+const rpEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rpPct = x => Math.round(x * 100) + '%';
+const rpMonthIdx = k => RP_MONTHS.findIndex(m => m[0] === k);
+const rpMonthLabel = k => (RP_MONTHS.find(m => m[0] === k) || [k, k])[1];
+const rpIsAdmin = () => currentUser && currentUser.role === 'admin';
+function rpDefaultMonth() {
+  const d = new Date(), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  return rpMonthIdx(k) >= 0 ? k : RP_MONTHS[0][0];
+}
+
+// ── load (realtime) ──
+function loadReadingPathways() {
+  if (rpListening) return;
+  rpListening = true;
+  db.ref(RP_PATH).on('value', snap => {
+    const v = snap.val() || {};
+    rpData = { scores: v.scores || {}, coaches: v.coaches || {},
+               assign: { groups: (v.assign && v.assign.groups) || {}, oneToOne: (v.assign && v.assign.oneToOne) || {} },
+               override: v.override || {} };
+    rpLoaded = true;
+    if (document.getElementById('tab-reading')?.classList.contains('active')) rpRender();
+  }, err => { console.error('Reading Pathways load error:', err); toast('⚠️ Reading Pathways could not load: ' + err.message); });
+}
+
+// ── roster: active students in Class 3 – JHS Form 2 ──
+function rpRoster() {
+  return (typeof students !== 'undefined' ? students : [])
+    .filter(s => RP_GRADES[s.grade] && (s.accountStatus || 'Active') === 'Active')
+    .map(s => ({ id: s.id, key: fbKey(s.id), name: s.name || [s.surname, s.firstName, s.otherNames].filter(Boolean).join(' '), grade: RP_GRADES[s.grade] }))
+    .sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name));
+}
+
+// ── scoring: same rules as the Placement System workbook ──
+function rpOri(grade, crs) {
+  const t = RP_ORI[grade === 3 ? 0 : grade <= 5 ? 1 : 2];
+  if (crs < t[0][0]) return t[0][1];
+  if (crs >= t[t.length - 1][0]) return t[t.length - 1][1];
+  let i = 0; while (i + 1 < t.length && t[i + 1][0] <= crs) i++;
+  const [c1, o1] = t[i], [c2, o2] = t[i + 1];
+  return Math.floor(o1 + (crs - c1) * (o2 - o1) / (c2 - c1) + 0.5);
+}
+function rpCascadeNoP5(d) {
+  const C = RP_CFG;
+  if (d.flu >= C.FH && d.comp < C.CLW) return ['P3', 'Fluency is strong (55%+) but comprehension is very low (under 40%)'];
+  if (d.acc < C.AL && d.rate >= C.RL) return ['P2', 'Accuracy is low (under 50%) while rate is not (50%+)'];
+  if (d.acc < C.AL && d.rate < C.RL) return ['P4', 'Accuracy and rate are both low (under 50%)'];
+  if (d.rate < C.RL && d.acc >= C.AS) return ['P1', 'Rate is low (under 50%) while accuracy is solid (60%+)'];
+  return ['P6', 'No single pattern stands out; the dials sit near the cut-offs'];
+}
+const rpBlank = v => v === null || v === undefined || v === '';
+function rpListenBand(s) { if (rpBlank(s)) return 'Not done'; s = +s; return s >= RP_CFG.LS ? 'Strong' : s >= RP_CFG.LW ? 'Watch' : 'Weak'; }
+function rpPriorListening(key, mk) {
+  const recs = rpData.scores[key] || {};
+  let best = null;
+  Object.entries(recs).forEach(([k, r]) => {
+    if (r && rpMonthIdx(k) < rpMonthIdx(mk) && !rpBlank(r.listening) && (!best || rpMonthIdx(k) > rpMonthIdx(best.k))) best = { k, score: +r.listening };
+  });
+  return best;
+}
+function rpDiagnose(stu, rec, mk) {
+  const C = RP_CFG, out = { valid: false, errors: [] };
+  const n = v => rpBlank(v) ? null : +v;
+  const rate = n(rec.rate), acc = n(rec.acc), comp = n(rec.comp);
+  if (!rec.form) out.errors.push('Choose the form used.');
+  [['Accuracy', acc, C.MA], ['Rate', rate, C.MR], ['Comprehension', comp, C.MC]].forEach(([lab, v, mx]) => {
+    if (v === null) out.errors.push(lab + ' is missing.');
+    else if (!Number.isInteger(v) || v < 0 || v > mx) out.errors.push(lab + ' must be a whole number from 0 to ' + mx + '.');
+  });
+  if (rate === null || acc === null || comp === null) { out.partial = true; return out; }
+  if (out.errors.some(e => !e.startsWith('Choose'))) return out;
+  const flu = rate + acc, crs = flu + comp, ori = rpOri(stu.grade, crs), tier = ori >= C.T1 ? 1 : ori >= C.T2 ? 2 : 3;
+  const d = { rate: rate / C.MR, acc: acc / C.MA, flu: flu / C.MF, comp: comp / C.MC };
+  const names = { rate: 'Rate', acc: 'Accuracy', flu: 'Fluency', comp: 'Comprehension' };
+  Object.assign(out, { valid: !out.errors.length, flu, crs, ori, tier, dials: d,
+                       weakest: names[Object.keys(d).reduce((a, b) => d[b] < d[a] ? b : a)] });
+  if (tier !== 3) return out;
+
+  let lScore = n(rec.listening), lFrom = null;
+  if (lScore === null) { const p = rpPriorListening(stu.key, mk); if (p) { lScore = p.score; lFrom = p.k; } }
+  const lb = rpListenBand(lScore);
+  const isP5 = d.flu < C.FL && d.comp < C.CLW;
+  const [alt, altWhy] = rpCascadeNoP5(d);
+  const cascade = isP5 ? 'P5' : alt;
+  const cascadeWhy = isP5 ? 'Fluency and comprehension are both very low (under 40%)' : altWhy;
+  let prof = cascade, status = 'complete', note = '';
+  if (cascade === 'P5') {
+    if (lb === 'Strong') { prof = alt; note = 'Listening was strong, so the low comprehension came from the words, not language: moved from Global Reader to ' + RP_PROF[alt].name + '.'; }
+    else if (lb === 'Weak') note = 'Listening was weak: language is also a barrier. Global Reader confirmed.';
+    else if (lb === 'Watch') { status = 'provisional'; note = 'Listening in the Watch band: held as Global Reader for now.'; }
+    else { status = 'provisional'; note = 'Provisional: the scores alone cannot separate a Global Reader from a Bottleneck.'; }
+  } else if (cascade === 'P4') {
+    if (lb === 'Weak') { prof = 'P5'; note = 'Listening was weak: language is also a barrier, so Bottleneck becomes Global Reader.'; }
+    else if (lb === 'Strong') note = 'Listening was strong: word recognition is the only barrier. Bottleneck confirmed.';
+    else if (lb === 'Watch') { status = 'provisional'; note = 'Listening in the Watch band: held as Bottleneck for now.'; }
+    else { status = 'provisional'; note = 'Provisional until the listening check confirms language is intact.'; }
+  } else if (cascade === 'P3' && lb === 'Weak') {
+    status = 'review'; note = 'A fluent reader who does not understand even when read to: the picture may be closer to the Global Reader. Review with the reading lead.';
+  }
+  const tests = [];
+  if (cascade === 'P5' || cascade === 'P4') {
+    tests.push({ key: 'listening', level: (lb === 'Not done' || lb === 'Watch') ? 'needed' : 'done', title: 'Listening comprehension check',
+      why: cascade === 'P5' ? 'Decides between Global Reader and Bottleneck: both cannot decode, and they look the same on the scores.'
+                            : 'Confirms Bottleneck: language should be intact when the words are read aloud to the student.', band: lb, from: lFrom, score: lScore });
+  } else if (cascade === 'P3') {
+    tests.push({ key: 'listening', level: lb === 'Not done' ? 'recommended' : lb === 'Weak' ? 'needed' : 'done', title: 'Listening comprehension check',
+      why: 'Confirms Word Caller: a Word Caller understands a passage read aloud; if not, look again.', band: lb, from: lFrom, score: lScore });
+  }
+  if (prof === 'P6' || prof === 'P4' || prof === 'P5') {
+    tests.push({ key: 'pa', level: rec.pa ? 'done' : (prof === 'P6' ? 'recommended' : 'advised'), title: 'Phonemic awareness oral screen',
+      why: prof === 'P6' ? 'Usually needed for an Emerging Reader: check the sound foundation before building on it.'
+                         : 'Decoding is breaking down: check whether the gap traces back to hearing the sounds; if so, build that first.' });
+  }
+  if (prof === 'P2' || prof === 'P3') {
+    tests.push({ key: 'miscue', level: rec.miscue ? 'done' : 'optional', title: 'Miscue analysis (Record Booklet, Section 5)',
+      why: prof === 'P2' ? 'Shows whether errors are guesses (look-alike words, few self-corrections) and whether the reader self-monitors.'
+                         : 'Mostly look-alike (G-only) miscues without meaning confirm that comprehension, not phonics, is the need.' });
+  }
+  const pending = tests.filter(t => t.level === 'needed').length;
+  const oneToOne = prof === 'P5' ? 'Global Reader: decoding and language at the greatest intensity'
+                 : d.acc < C.OA ? 'Accuracy below ' + Math.round(C.OA * 100) + '%: group reading would only rehearse error' : '';
+  return Object.assign(out, { profile: prof, P: RP_PROF[prof], cascade, cascadeWhy, note, listening: lb, tests, pending,
+                              status: pending ? 'provisional' : status, line: RP_PROF[prof].line, oneToOne });
+}
+
+// latest valid result per student (drives groups and 1:1)
+function rpLatest(stu) {
+  const recs = rpData.scores[stu.key] || {};
+  const keys = Object.keys(recs).filter(k => recs[k] && rpMonthIdx(k) >= 0).sort((a, b) => rpMonthIdx(b) - rpMonthIdx(a));
+  for (const k of keys) { const d = rpDiagnose(stu, recs[k], k); if (d.valid) return { month: k, rec: recs[k], d }; }
+  return null;
+}
+
+// ── groups: within one class and one line; same profiles together; Coaching Pack §3 ──
+function rpPlacements() {
+  const roster = rpRoster();
+  const placed = roster.map(s => ({ s, L: rpLatest(s) }));
+  const groups = {};   // gid -> {gid, grade, line, idx, members:[...]}
+  const byKey = {};
+  const order = { P4: 1, P2: 2, P6: 3, P1: 1, P3: 2, P5: 1 };
+  [3, 4, 5, 6, 7, 8].forEach(g => ['DEC', 'FLU', 'GLB'].forEach(line => {
+    const list = placed.filter(p => p.s.grade === g && p.L && p.L.d.tier === 3 && p.L.d.line === line)
+      .sort((a, b) => order[a.L.d.profile] - order[b.L.d.profile] || a.L.d.ori - b.L.d.ori || a.s.name.localeCompare(b.s.name));
+    if (!list.length) return;
+    const n = list.length, ng = Math.ceil(n / (line === 'GLB' ? RP_CFG.GSG : RP_CFG.GSD));
+    list.forEach((p, i) => {
+      const idx = Math.ceil((i + 1) * ng / n), gid = `B${g}-${line}-${idx}`;
+      (groups[gid] = groups[gid] || { gid, grade: g, line, idx, members: [] }).members.push(p);
+      byKey[p.s.key] = gid;
+    });
+  }));
+  // coaches
+  const coaches = Object.entries(rpData.coaches).map(([id, c]) => ({ id, ...c })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const forLine = l => coaches.filter(c => c.line === 'Both lines' || c.line === (l === 'FLU' ? 'Fluency & meaning line' : 'Decoding line'));
+  const glist = Object.values(groups).sort((a, b) => a.grade - b.grade || a.line.localeCompare(b.line) || a.idx - b.idx);
+  ['DEC', 'FLU'].forEach(fam => {
+    const fg = glist.filter(x => fam === 'FLU' ? x.line === 'FLU' : x.line !== 'FLU'), cs = forLine(fam);
+    fg.forEach((x, i) => { x.suggested = cs.length ? cs[Math.ceil((i + 1) * cs.length / fg.length) - 1] : null; });
+  });
+  glist.forEach(x => {
+    const a = rpData.assign.groups[x.gid];
+    x.coach = (a && rpData.coaches[a]) ? { id: a, ...rpData.coaches[a] } : x.suggested;
+    x.chosen = !!(a && rpData.coaches[a]);
+  });
+  // one-on-one
+  const ones = placed.filter(p => p.L && p.L.d.tier === 3).map(p => {
+    const ov = rpData.override[p.s.key];
+    const auto = !!p.L.d.oneToOne, on = ov === 'Yes' ? true : ov === 'No' ? false : auto;
+    return { ...p, auto, on, ov };
+  });
+  const flagged = ones.filter(o => o.on), oc = coaches.filter(c => c.oneToOne);
+  flagged.forEach((o, i) => {
+    o.suggested = oc.length ? oc[Math.ceil((i + 1) * oc.length / flagged.length) - 1] : null;
+    const a = rpData.assign.oneToOne[o.s.key];
+    o.coach = (a && rpData.coaches[a]) ? { id: a, ...rpData.coaches[a] } : o.suggested;
+    o.chosen = !!(a && rpData.coaches[a]);
+  });
+  return { placed, groups: glist, byKey, coaches, ones, flagged };
+}
+
+// ── helpers for timing ──
+const rpHM = m => { let h = Math.floor(m / 60), mm = m % 60; if (h > 12) h -= 12; return h + ':' + String(mm).padStart(2, '0'); };
+function rpPeriods(g) { return Object.entries(RP_SLOTS[g] || {}).flatMap(([d, s]) => s.map(([a, b]) => `${d} ${rpHM(a)}–${rpHM(b)}`)).join('; ') || 'No reading periods on the timetable'; }
+function rpOverlap(g1, g2) {
+  const out = [];
+  Object.keys(RP_SLOTS[g1] || {}).forEach(d => (RP_SLOTS[g1][d] || []).forEach(([a1, b1]) => (RP_SLOTS[g2][d] || []).forEach(([a2, b2]) => {
+    const a = Math.max(a1, a2), b = Math.min(b1, b2); if (a < b) out.push(`${d} ${rpHM(a)}–${rpHM(b)}`);
+  })));
+  return out.join('; ');
+}
+
+// ═════════ RENDER ═════════
+function rpRender() {
+  const root = document.getElementById('rp-root');
+  if (!root) return;
+  if (!rpMonth) rpMonth = rpDefaultMonth();
+  if (!rpLoaded) { root.innerHTML = `<div class="card"><p class="rp-note">Loading Reading Pathways…</p></div>`; loadReadingPathways(); return; }
+  const tabs = [['enter', '✏️ Enter scores'], ['groups', '👥 Groups & coaches'], ['progress', '📈 Progress'], ['coaches', '🧑‍🏫 Coaches'], ['export', '⬇️ Export']];
+  const P = rpPlacements();
+  let body = '';
+  if (rpView === 'enter') body = rpViewEnter(P);
+  else if (rpView === 'groups') body = rpViewGroups(P);
+  else if (rpView === 'progress') body = rpViewProgress(P);
+  else if (rpView === 'coaches') body = rpViewCoaches(P);
+  else body = rpViewExport(P);
+  root.innerHTML = `<div class="rp-subnav">${tabs.map(([k, l]) => `<button class="${rpView === k ? 'on' : ''}" onclick="rpGo('${k}')">${l}</button>`).join('')}</div>${body}`;
+  const q = document.getElementById('rp-q');
+  if (q) { q.oninput = () => { rpQuery = q.value; rpRenderList(P); }; }
+  if (rpView === 'enter') rpRenderList(P);
+}
+function rpGo(v) { rpView = v; rpRender(); }
+function rpSetCls(c) { rpCls = c; rpRender(); }
+function rpSetMonth(m) { rpMonth = m; rpRender(); }
+function rpClassChips() {
+  return `<div class="rp-chipbar">${['all', 3, 4, 5, 6, 7, 8].map(c => `<button class="${String(rpCls) === String(c) ? 'on' : ''}" onclick="rpSetCls('${c}')">${c === 'all' ? 'All classes' : RP_GNAME(c)}</button>`).join('')}</div>`;
+}
+const rpInCls = s => rpCls === 'all' || String(s.grade) === String(rpCls);
+
+function rpViewEnter(P) {
+  const inView = P.placed.filter(p => rpInCls(p.s));
+  const ds = inView.map(p => { const r = (rpData.scores[p.s.key] || {})[rpMonth]; return r ? rpDiagnose(p.s, r, rpMonth) : null; }).filter(d => d && d.valid);
+  const c = t => ds.filter(d => d.tier === t).length;
+  return `<div class="card">
+    <h2>📖 Reading Pathways · Enter FRIA-GORT scores</h2>
+    <div class="rp-bar">
+      <label style="margin:0">Testing month</label>
+      <select onchange="rpSetMonth(this.value)">${RP_MONTHS.map(([k, l]) => `<option value="${k}" ${k === rpMonth ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <input id="rp-q" type="search" placeholder="Search name or ID" value="${rpEsc(rpQuery)}" style="flex:1;min-width:12rem">
+    </div>
+    <div class="rp-bar">${rpClassChips()}</div>
+    <div class="summary-strip">
+      <div class="summary-box"><div class="sb-label">Tested in ${rpMonthLabel(rpMonth)}</div><div class="sb-value">${ds.length} / ${inView.length}</div></div>
+      <div class="summary-box"><div class="sb-label">Tier 1 · At level</div><div class="sb-value">${c(1)}</div></div>
+      <div class="summary-box"><div class="sb-label">Tier 2 · Just below</div><div class="sb-value">${c(2)}</div></div>
+      <div class="summary-box"><div class="sb-label">Tier 3 · Far below</div><div class="sb-value">${c(3)}</div></div>
+      <div class="summary-box"><div class="sb-label">Testing still needed</div><div class="sb-value">${ds.filter(d => d.pending).length}</div></div>
+    </div>
+    <p class="rp-note" style="margin:.6rem 0">Click a student to enter or edit their scores for ${rpMonthLabel(rpMonth)}. Only Class 3 to JHS Form 2 are listed, because FRIA-GORT covers Grades 3–8.</p>
+    <div class="rp-list" id="rp-list"></div>
+  </div>`;
+}
+function rpChips(p) {
+  const r = (rpData.scores[p.s.key] || {})[rpMonth];
+  if (!r) {
+    if (!p.L) return `<span class="rp-chip">Not tested</span>`;
+    const d = p.L.d;
+    return `<span class="rp-chip">Not tested in ${rpMonthLabel(rpMonth)}</span><span class="rp-chip">${rpMonthLabel(p.L.month)}: ${d.tier === 3 ? rpEsc(d.profile + ' ' + d.P.name) : 'Tier ' + d.tier}</span>`;
+  }
+  const d = rpDiagnose(p.s, r, rpMonth);
+  if (!d.valid) return `<span class="rp-chip need">Incomplete</span>`;
+  let h = `<span class="rp-chip t${d.tier}">Tier ${d.tier} · ORI ${d.ori}</span>`;
+  if (d.tier === 3) h += `<span class="rp-chip">${rpEsc(d.profile + ' ' + d.P.name)}${d.status === 'provisional' ? ' (provisional)' : ''}</span>`;
+  if (d.pending) h += `<span class="rp-chip need">Testing needed</span>`;
+  if (d.oneToOne) h += `<span class="rp-chip">1:1</span>`;
+  return h;
+}
+function rpRenderList(P) {
+  const el = document.getElementById('rp-list'); if (!el) return;
+  const q = rpQuery.trim().toLowerCase();
+  const list = P.placed.filter(p => rpInCls(p.s) && (!q || p.s.name.toLowerCase().includes(q) || String(p.s.id).toLowerCase().includes(q)));
+  el.innerHTML = list.map(p => `<button class="rp-row" onclick="rpOpen('${rpEsc(p.s.key)}')"><div><div class="n">${rpEsc(p.s.name)}</div><div class="m">${rpEsc(p.s.id)} · ${RP_GNAME(p.s.grade)}</div></div><div class="rp-chips">${rpChips(p)}</div></button>`).join('')
+    || `<div class="empty"><div class="e-icon">📚</div>No students match. Students in Class 3 to JHS Form 2 appear here once they are in All Students.</div>`;
+}
+
+// ── groups & coaches ──
+function rpCoachSelect(kind, id, cur, suggested) {
+  if (!rpIsAdmin()) return `<div class="rp-note">Coach: <b>${rpEsc(cur ? cur.name : 'Not assigned')}</b></div>`;
+  const stored = (kind === 'groups' ? rpData.assign.groups : rpData.assign.oneToOne)[id];
+  const coaches = Object.entries(rpData.coaches).map(([cid, c]) => ({ id: cid, ...c })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return `<select onchange="rpAssign('${kind}','${rpEsc(id)}',this.value)" aria-label="Coach">
+    <option value="">${suggested ? 'Suggested: ' + rpEsc(suggested.name) : 'Choose a coach'}</option>
+    ${coaches.map(c => `<option value="${rpEsc(c.id)}" ${stored === c.id ? 'selected' : ''}>${rpEsc(c.name)}</option>`).join('')}
+  </select>`;
+}
+function rpViewGroups(P) {
+  const classes = [3, 4, 5, 6, 7, 8].filter(g => rpCls === 'all' || String(g) === String(rpCls));
+  let h = `<div class="card"><h2>👥 Reading Pathways groups</h2>
+    <p class="rp-note">Built from each Tier 3 student's latest scores and rebuilt as new months are entered. Groups stay within one class and one coaching line; Global Readers sit in groups of two at most (Coaching Pack §3). ${rpIsAdmin() ? 'Choose a coach for each group, or leave the suggestion.' : 'Coaches are assigned by an admin.'}</p>
+    <div class="rp-bar">${rpClassChips()}</div>
+    ${!P.coaches.length ? `<div class="rp-warn">No coaches set up yet. ${rpIsAdmin() ? 'Add them on the Coaches tab.' : 'Ask an admin to add them on the Coaches tab.'}</div>` : ''}`;
+  classes.forEach(g => {
+    const gs = P.groups.filter(x => x.grade === g);
+    h += `<h3 style="margin:1.2rem 0 .3rem;font-family:'Playfair Display',serif;color:var(--green)">${RP_GNAME(g)}</h3>
+      <div class="rp-note" style="margin-bottom:.5rem">Reading periods: ${rpEsc(rpPeriods(g))}</div>`;
+    if (!gs.length) { h += `<p class="rp-note">No Tier 3 readers placed yet.</p>`; return; }
+    h += `<div class="rp-groups">` + gs.map(x => {
+      const clash = x.coach ? P.groups.filter(o => o.grade !== g && o.coach && o.coach.id === x.coach.id).map(o => o.grade)
+        .filter((v, i, a) => a.indexOf(v) === i).map(o => [o, rpOverlap(g, o)]).filter(([, t]) => t) : [];
+      const lineOk = !x.coach || x.coach.line === 'Both lines' || x.coach.line === (x.line === 'FLU' ? 'Fluency & meaning line' : 'Decoding line');
+      return `<div class="rp-group"><h4>${x.line === 'FLU' ? 'Fluency & meaning' : x.line === 'GLB' ? 'Global Readers' : 'Decoding'} group ${x.idx}</h4>
+        <div class="rp-note">${rpEsc(RP_LINE[x.line])} · ${x.members.length} reader${x.members.length > 1 ? 's' : ''}</div>
+        <ul>${x.members.map(m => { const o = P.ones.find(q => q.s.key === m.s.key);
+          return `<li><a href="#" onclick="rpOpen('${rpEsc(m.s.key)}');return false">${rpEsc(m.s.name)}</a> · ${m.L.d.profile} ${rpEsc(m.L.d.P.name)}${o && o.on ? ' · <b>1:1</b>' : ''}${m.L.d.status === 'provisional' ? ' · <span style="color:var(--rp-need)">provisional</span>' : ''}</li>`; }).join('')}</ul>
+        ${rpCoachSelect('groups', x.gid, x.coach, x.suggested)}
+        ${x.coach && !x.chosen ? `<div class="rp-note">Suggested coach in use: ${rpEsc(x.coach.name)}</div>` : ''}
+        ${!lineOk ? `<div class="rp-warn">This coach runs the other line.</div>` : ''}
+        ${clash.map(([o, t]) => `<div class="rp-warn">Same coach has a ${RP_GNAME(o)} group. Shared reading time: ${rpEsc(t)}. Plan sessions in the other periods.</div>`).join('')}
+      </div>`;
+    }).join('') + `</div>`;
+  });
+  h += `</div>`;
+  // one-on-one
+  const ones = P.ones.filter(o => rpInCls(o.s) && (o.on || o.auto));
+  h += `<div class="card"><h2>🎯 One-on-one readers</h2>
+    <p class="rp-note">Flagged automatically for every Global Reader and for any Tier 3 reader with accuracy below ${Math.round(RP_CFG.OA * 100)}%. They keep their group place and also get a one-on-one coach (Coaching Pack §6).</p>`;
+  if (!ones.length) h += `<p class="rp-note">No one-on-one readers yet.</p>`;
+  else h += `<div class="rp-scroll"><table class="rp-tbl"><tr><th>Student</th><th>Class</th><th>Profile</th><th>Why</th><th>One-on-one?</th><th>1:1 coach</th></tr>` +
+    ones.map(o => `<tr><td><a href="#" onclick="rpOpen('${rpEsc(o.s.key)}');return false">${rpEsc(o.s.name)}</a></td><td>${RP_GNAME(o.s.grade)}</td><td>${o.L.d.profile} ${rpEsc(o.L.d.P.name)}</td>
+      <td>${rpEsc(o.L.d.oneToOne || 'Set by hand')}</td>
+      <td>${rpIsAdmin() ? `<select onchange="rpOverride('${rpEsc(o.s.key)}',this.value)" aria-label="One-on-one"><option value="" ${!o.ov ? 'selected' : ''}>Automatic (${o.auto ? 'Yes' : 'No'})</option><option value="Yes" ${o.ov === 'Yes' ? 'selected' : ''}>Yes</option><option value="No" ${o.ov === 'No' ? 'selected' : ''}>No</option></select>` : (o.on ? 'Yes' : 'No')}</td>
+      <td>${o.on ? rpCoachSelect('oneToOne', o.s.key, o.coach, o.suggested) : '—'}</td></tr>`).join('') + `</table></div>`;
+  return h + `</div>`;
+}
+async function rpAssign(kind, id, coachId) {
+  if (!requireAdmin('assign coaches')) return;
+  try { await db.ref(`${RP_PATH}/assign/${kind}/${id}`).set(coachId || null); toast('✅ Coach saved'); }
+  catch (e) { toast('⚠️ Could not save: ' + e.message); }
+}
+async function rpOverride(key, v) {
+  if (!requireAdmin('change one-on-one')) return;
+  try { await db.ref(`${RP_PATH}/override/${key}`).set(v || null); toast('✅ Saved'); }
+  catch (e) { toast('⚠️ Could not save: ' + e.message); }
+}
+
+// ── progress ──
+function rpViewProgress(P) {
+  const rows = P.placed.filter(p => rpInCls(p.s));
+  const shown = RP_MONTHS.filter(([k]) => rows.some(p => (rpData.scores[p.s.key] || {})[k]));
+  const months = shown.length ? shown : RP_MONTHS.slice(0, 1);
+  return `<div class="card"><h2>📈 Progress by month</h2>
+    <p class="rp-note">ORI each month, coloured by tier, with the Tier 3 profile underneath. Tier 1 is 100+, Tier 2 is 85–99, Tier 3 is 84 or below.</p>
+    <div class="rp-bar">${rpClassChips()}</div>
+    <div class="rp-scroll"><table class="rp-tbl"><tr><th>Student</th><th>Class</th>${months.map(m => `<th>${m[1]}</th>`).join('')}<th>Change</th><th>Now</th></tr>
+    ${rows.map(p => {
+      const recs = rpData.scores[p.s.key] || {}; const vals = [];
+      const cells = months.map(([k]) => { const r = recs[k]; if (!r) return '<td></td>'; const d = rpDiagnose(p.s, r, k); if (!d.valid) return '<td>…</td>'; vals.push(d.ori);
+        return `<td><span class="rp-cell t${d.tier}">${d.ori}</span>${d.tier === 3 ? `<div class="rp-note">${d.profile}</div>` : ''}</td>`; }).join('');
+      const ch = vals.length > 1 ? vals[vals.length - 1] - vals[0] : null;
+      return `<tr><td><a href="#" onclick="rpOpen('${rpEsc(p.s.key)}');return false">${rpEsc(p.s.name)}</a></td><td>${RP_GNAME(p.s.grade)}</td>${cells}
+        <td style="font-weight:700;color:${ch > 0 ? 'var(--rp-t1)' : ch < 0 ? 'var(--rp-t3)' : 'inherit'}">${ch === null ? '' : (ch > 0 ? '+' : '') + ch}</td>
+        <td>${p.L ? (p.L.d.tier === 3 ? `Tier 3 · ${p.L.d.profile}` : 'Tier ' + p.L.d.tier) : ''}</td></tr>`; }).join('')}
+    </table></div></div>`;
+}
+
+// ── coaches ──
+function rpViewCoaches(P) {
+  const admin = rpIsAdmin();
+  const load = c => ({ groups: P.groups.filter(x => x.coach && x.coach.id === c.id).length,
+                       readers: P.groups.filter(x => x.coach && x.coach.id === c.id).reduce((a, x) => a + x.members.length, 0),
+                       ones: P.flagged.filter(o => o.coach && o.coach.id === c.id).length });
+  return `<div class="card"><h2>🧑‍🏫 Pathways coaches</h2>
+    <p class="rp-note">Coaching Pack §8: one coach runs the decoding line, another the fluency and meaning line. Coaches marked for one-on-one also take flagged readers.</p>
+    ${P.coaches.length ? `<div class="rp-scroll"><table class="rp-tbl"><tr><th>Coach</th><th>Line</th><th>Takes 1:1</th><th>Groups</th><th>Readers in groups</th><th>1:1 readers</th>${admin ? '<th></th>' : ''}</tr>
+      ${P.coaches.map(c => { const l = load(c); return `<tr><td><b>${rpEsc(c.name)}</b></td><td>${rpEsc(c.line)}</td><td>${c.oneToOne ? 'Yes' : 'No'}</td><td>${l.groups}</td><td>${l.readers}</td><td>${l.ones}</td>
+        ${admin ? `<td><button class="btn btn-sm btn-danger" onclick="rpDelCoach('${rpEsc(c.id)}')">Remove</button></td>` : ''}</tr>`; }).join('')}</table></div>`
+      : `<p class="rp-note">No coaches yet.</p>`}
+    ${admin ? `<h3 class="rp-h3">Add a coach</h3>
+      <div class="form-grid">
+        <div><label for="rp-c-name">Name</label><input id="rp-c-name" placeholder="e.g. Madam Akosua"></div>
+        <div><label for="rp-c-line">Line they run</label><select id="rp-c-line"><option>Decoding line</option><option>Fluency & meaning line</option><option>Both lines</option></select></div>
+        <div><label for="rp-c-one">Takes one-on-one readers?</label><select id="rp-c-one"><option value="1">Yes</option><option value="0">No</option></select></div>
+      </div><div class="btn-row"><button class="btn btn-primary" onclick="rpAddCoach()">Add coach</button></div>`
+      : `<p class="rp-note">Only admins can add or remove coaches.</p>`}
+  </div>`;
+}
+async function rpAddCoach() {
+  if (!requireAdmin('add coaches')) return;
+  const name = document.getElementById('rp-c-name').value.trim();
+  if (!name) { toast('Type the coach\'s name first.'); return; }
+  try {
+    await db.ref(`${RP_PATH}/coaches`).push({ name, line: document.getElementById('rp-c-line').value, oneToOne: document.getElementById('rp-c-one').value === '1' });
+    toast('✅ ' + name + ' added');
+  } catch (e) { toast('⚠️ Could not save: ' + e.message); }
+}
+async function rpDelCoach(id) {
+  if (!requireAdmin('remove coaches')) return;
+  const c = rpData.coaches[id]; if (!c || !confirm(`Remove ${c.name}? Their groups go back to the suggested coach.`)) return;
+  try {
+    const upd = {}; upd[`coaches/${id}`] = null;
+    Object.entries(rpData.assign.groups).forEach(([g, v]) => { if (v === id) upd[`assign/groups/${g}`] = null; });
+    Object.entries(rpData.assign.oneToOne).forEach(([k, v]) => { if (v === id) upd[`assign/oneToOne/${k}`] = null; });
+    await db.ref(RP_PATH).update(upd); toast('Coach removed');
+  } catch (e) { toast('⚠️ Could not remove: ' + e.message); }
+}
+
+// ── export (Excel) ──
+function rpViewExport() {
+  return `<div class="card"><h2>⬇️ Export to Excel</h2>
+    <p class="rp-note">Downloads a workbook with four sheets: current placements, groups and coaches, one-on-one readers, and every score entered (one row per student per month).</p>
+    <div class="btn-row"><button class="btn btn-primary" onclick="rpDownload()">Download Reading Pathways workbook</button></div></div>`;
+}
+function rpDownload() {
+  if (typeof XLSX === 'undefined') { toast('Excel export is not available right now.'); return; }
+  const P = rpPlacements();
+  const place = [['Student ID', 'Name', 'Class', 'Latest month', 'ORI', 'Tier', 'Placement', 'Profile', 'Coaching line', 'Profiling note', 'Group', 'Group coach', 'One-on-one', '1:1 coach']];
+  P.placed.forEach(p => {
+    const d = p.L && p.L.d, o = P.ones.find(q => q.s.key === p.s.key), gid = P.byKey[p.s.key], grp = P.groups.find(x => x.gid === gid);
+    place.push([p.s.id, p.s.name, RP_GNAME(p.s.grade), p.L ? rpMonthLabel(p.L.month) : 'Not tested', d ? d.ori : '', d ? 'Tier ' + d.tier : '',
+      d ? (d.tier === 1 ? 'At level' : d.tier === 2 ? 'Just below level' : 'Far below level') : '', d && d.tier === 3 ? d.profile + ' ' + d.P.name : '',
+      d && d.tier === 3 ? RP_LINE[d.line] : '', d && d.tier === 3 ? (d.note || '') : '', gid || '', grp && grp.coach ? grp.coach.name : '',
+      o && o.on ? 'Yes' : '', o && o.on && o.coach ? o.coach.name : '']);
+  });
+  const grps = [['Group', 'Class', 'Line', 'Readers', 'Members', 'Coach', 'Class reading periods']];
+  P.groups.forEach(x => grps.push([x.gid, RP_GNAME(x.grade), RP_LINE[x.line], x.members.length, x.members.map(m => m.s.name + ' (' + m.L.d.profile + ')').join('; '), x.coach ? x.coach.name : '', rpPeriods(x.grade)]));
+  const ones = [['Student', 'Class', 'Profile', 'Why', '1:1 coach']];
+  P.flagged.forEach(o => ones.push([o.s.name, RP_GNAME(o.s.grade), o.L.d.profile + ' ' + o.L.d.P.name, o.L.d.oneToOne || 'Set by hand', o.coach ? o.coach.name : '']));
+  const log = [['Month', 'Date tested', 'Student ID', 'Name', 'Class', 'Form', 'Rate raw', 'Accuracy raw', 'Fluency raw', 'Comp raw', 'Listening (0–5)', 'CRS', 'ORI', 'Tier', 'Profile', 'Entered by']];
+  P.placed.forEach(p => Object.entries(rpData.scores[p.s.key] || {}).sort((a, b) => rpMonthIdx(a[0]) - rpMonthIdx(b[0])).forEach(([k, r]) => {
+    if (!r) return; const d = rpDiagnose(p.s, r, k);
+    log.push([rpMonthLabel(k), r.date || '', p.s.id, p.s.name, RP_GNAME(p.s.grade), r.form, +r.rate, +r.acc, (+r.rate) + (+r.acc), +r.comp, rpBlank(r.listening) ? '' : +r.listening,
+      d.crs ?? '', d.ori ?? '', d.tier ? 'Tier ' + d.tier : '', d.tier === 3 ? d.profile : '', r.byName || '']);
+  }));
+  const wb = XLSX.utils.book_new();
+  [['Placements', place], ['Groups', grps], ['One-on-one', ones], ['Score Log', log]].forEach(([n, a]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), n));
+  XLSX.writeFile(wb, `FRIA_Reading_Pathways_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+// ═════════ ENTRY MODAL ═════════
+function rpEnsureModal() {
+  if (document.getElementById('rp-modal')) return;
+  const m = document.createElement('div');
+  m.id = 'rp-modal';
+  m.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-labelledby="rp-m-title">
+    <div class="hd"><div><h2 id="rp-m-title"></h2><div class="rp-note" id="rp-m-meta"></div></div><button class="btn btn-sm" onclick="rpClose()" aria-label="Close">✕</button></div>
+    <div class="bd">
+      <div class="en">
+        <label>Form used</label>
+        <div class="rp-seg" id="rp-form">${['A', 'B', 'C', 'D'].map(f => `<button type="button" data-f="${f}" onclick="rpSetForm('${f}')">${f}</button>`).join('')}</div>
+        <label for="rp-acc">Accuracy raw (0–80)</label><input class="num" id="rp-acc" type="number" inputmode="numeric" min="0" max="80">
+        <label for="rp-rate">Rate raw (0–80)</label><input class="num" id="rp-rate" type="number" inputmode="numeric" min="0" max="80">
+        <label for="rp-flu">Fluency raw (auto: Rate + Accuracy)</label><input class="num" id="rp-flu" type="number" readonly tabindex="-1">
+        <label for="rp-comp">Comprehension raw (0–80)</label><input class="num" id="rp-comp" type="number" inputmode="numeric" min="0" max="80">
+        <label for="rp-date">Date tested</label><input id="rp-date" type="date">
+        <div style="color:var(--danger);font-size:.8rem;min-height:1rem;margin-top:.4rem" id="rp-err"></div>
+        <p class="rp-note">Copy the totals from the Examiner Record Booklet cover page.</p>
+      </div>
+      <div class="rs" id="rp-result"></div>
+    </div>
+    <div class="ft"><div class="rp-note" id="rp-m-note"></div>
+      <div class="btn-row" style="margin:0"><button class="btn btn-danger btn-sm" id="rp-del" onclick="rpDelete()">Delete this month</button><button class="btn" onclick="rpClose()">Cancel</button><button class="btn btn-primary" onclick="rpSave()">Save</button></div></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m) rpClose(); });
+  ['rp-acc', 'rp-rate', 'rp-comp', 'rp-date'].forEach(id => document.getElementById(id).addEventListener('input', rpUpdate));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && m.style.display === 'flex') rpClose(); });
+}
+function rpOpen(key) {
+  const stu = rpRoster().find(s => s.key === key); if (!stu) return;
+  rpEnsureModal();
+  const ex = (rpData.scores[key] || {})[rpMonth];
+  rpCur = { stu, rec: ex ? { ...ex } : { form: '', rate: '', acc: '', comp: '', listening: '', pa: '', miscue: '', date: new Date().toISOString().slice(0, 10) }, existing: !!ex };
+  document.getElementById('rp-m-title').textContent = stu.name;
+  document.getElementById('rp-m-meta').textContent = `${stu.id} · ${RP_GNAME(stu.grade)} · ${rpMonthLabel(rpMonth)}`;
+  ['acc', 'rate', 'comp'].forEach(f => document.getElementById('rp-' + f).value = rpBlank(rpCur.rec[f]) ? '' : rpCur.rec[f]);
+  document.getElementById('rp-date').value = rpCur.rec.date || '';
+  document.getElementById('rp-del').style.display = ex ? '' : 'none';
+  document.getElementById('rp-m-note').textContent = ex && ex.byName ? `Last saved by ${ex.byName}${ex.at ? ' on ' + new Date(ex.at).toLocaleDateString('en-GB') : ''}` : '';
+  rpPaintForm(); rpUpdate();
+  document.getElementById('rp-modal').style.display = 'flex';
+  setTimeout(() => (rpCur.rec.form ? document.getElementById('rp-acc') : document.querySelector('#rp-form button')).focus(), 30);
+}
+function rpClose() { const m = document.getElementById('rp-modal'); if (m) m.style.display = 'none'; rpCur = null; }
+function rpPaintForm() { document.querySelectorAll('#rp-form button').forEach(b => b.classList.toggle('on', b.dataset.f === rpCur.rec.form)); }
+function rpSetForm(f) { rpCur.rec.form = f; rpPaintForm(); rpUpdate(); document.getElementById('rp-acc').focus(); }
+function rpUpdate() {
+  if (!rpCur) return;
+  const r = rpCur.rec;
+  ['acc', 'rate', 'comp'].forEach(f => { r[f] = document.getElementById('rp-' + f).value; });
+  r.date = document.getElementById('rp-date').value;
+  document.getElementById('rp-flu').value = (r.acc !== '' && r.rate !== '') ? (+r.acc) + (+r.rate) : '';
+  [['rp-acc', r.acc], ['rp-rate', r.rate], ['rp-comp', r.comp]].forEach(([id, v]) => document.getElementById(id).classList.toggle('bad', v !== '' && (!Number.isInteger(+v) || +v < 0 || +v > 80)));
+  const d = rpDiagnose(rpCur.stu, r, rpMonth);
+  document.getElementById('rp-err').textContent = d.partial ? '' : d.errors.join(' ');
+  document.getElementById('rp-result').innerHTML = rpResultHTML(d);
+  const hist = Object.entries(rpData.scores[rpCur.stu.key] || {}).filter(([k, v]) => v && k !== rpMonth).sort((a, b) => rpMonthIdx(a[0]) - rpMonthIdx(b[0]));
+  if (hist.length) document.getElementById('rp-result').insertAdjacentHTML('beforeend', `<div class="rp-h3">Other months</div><table class="rp-tbl"><tr><th>Month</th><th>Form</th><th>ORI</th><th>Tier</th><th>Profile</th></tr>` +
+    hist.map(([k, v]) => { const x = rpDiagnose(rpCur.stu, v, k); return `<tr><td>${rpMonthLabel(k)}</td><td>${rpEsc(v.form)}</td><td>${x.ori ?? ''}</td><td>${x.tier ?? ''}</td><td>${x.tier === 3 ? rpEsc(x.profile + ' ' + x.P.name) : ''}</td></tr>`; }).join('') + `</table>`);
+}
+function rpResultHTML(d) {
+  if (d.partial || d.ori === undefined) return `<div class="rp-tier none"><div class="big">Waiting for scores</div><div class="sm">Enter accuracy, rate and comprehension to place this student.</div></div>`;
+  const place = d.tier === 1 ? 'At level: library, independent reading' : d.tier === 2 ? 'Just below level: library, reading with light structure' : 'Far below level: Reading Pathways coached block';
+  let h = `<div class="rp-tier t${d.tier}"><div class="big">Tier ${d.tier} · ${d.tier === 1 ? 'At level' : d.tier === 2 ? 'Just below level' : 'Far below level'}</div>
+    <div class="sm">${place}</div><div class="sm" style="margin-top:.3rem">CRS <b>${d.crs}</b> · ORI <b>${d.ori}</b> · Fluency <b>${d.flu}</b>/160</div></div>
+    <div class="rp-dials">${[['Rate', 'rate'], ['Accuracy', 'acc'], ['Fluency', 'flu'], ['Comprehension', 'comp']].map(([l, k]) =>
+      `<div class="rp-dial"><div class="l">${l}</div><div class="v">${rpPct(d.dials[k])}</div><div class="rp-meter"><i style="width:${Math.min(100, d.dials[k] * 100)}%"></i></div></div>`).join('')}</div>`;
+  if (d.tier !== 3) return h + `<p class="rp-note">${d.tier === 1 ? 'On track: no intervention profile.' : 'Just below level: not profiled for the coached block.'} Weakest dial: <b>${d.weakest}</b>.</p>`;
+  h += `<div class="rp-h3">Reading Pathways group</div><div class="rp-prof">
+    <div class="pn">${d.profile} · ${rpEsc(d.P.name)} ${d.status === 'provisional' ? '<span class="rp-chip need">Provisional</span>' : d.status === 'review' ? '<span class="rp-chip need">Review</span>' : '<span class="rp-chip t1">Profile complete</span>'}</div>
+    <div class="why">Scores: ${rpEsc(d.cascadeWhy)}${d.cascade !== d.profile ? ' → ' + rpEsc(RP_PROF[d.cascade].name) + ' on the scores alone.' : '.'} ${rpEsc(d.note)}</div>
+    <span class="rp-pill">${rpEsc(RP_LINE[d.line])}${d.line === 'GLB' ? ', groups of 2 at most' : ''}</span><span class="rp-pill">Core need: ${rpEsc(d.P.need)}</span>
+    ${d.oneToOne ? `<span class="rp-pill"><b>Also one-on-one:</b> ${rpEsc(d.oneToOne)}</span>` : ''}
+    <div class="why" style="margin-top:.45rem"><b>Teaching:</b> ${rpEsc(d.P.where)}. <b>Caution:</b> ${rpEsc(d.P.caution)}</div></div>`;
+  h += `<div class="rp-h3">Further testing${d.tests.length ? '' : ': none needed'}</div>`;
+  if (!d.tests.length) h += `<p class="rp-note">The scores settle this profile. Re-profile at the next monthly test.</p>`;
+  const r = rpCur.rec;
+  d.tests.forEach(t => {
+    const lvl = { needed: 'Needed to finish profiling', recommended: 'Recommended', advised: 'Advised', optional: 'Optional', done: 'Done' }[t.level];
+    const cls = t.level === 'done' ? 'done' : (t.key !== 'listening' && t.level !== 'needed') ? 'opt' : '';
+    h += `<div class="rp-test ${cls}"><div class="tt"><span>${t.title}</span><span class="st">${lvl}</span></div><div class="rp-note">${rpEsc(t.why)}</div>`;
+    if (t.key === 'listening') {
+      h += `<ol><li>Choose a grade-level story from a form the student did <b>not</b> read.</li><li>Read it aloud, with the text out of the student's hands.</li><li>Take the book away and ask the five questions, in English.</li><li>Score out of 5: 5 = Strong, 3–4 = Watch, 0–2 = Weak.</li></ol>
+        <div class="inl"><label for="rp-listen" style="margin:0">Listening score this month</label><input id="rp-listen" type="number" min="0" max="5" value="${rpEsc(r.listening ?? '')}" onchange="rpSetTest('listening',this.value)"><span>/ 5 → <b>${rpListenBand(r.listening)}</b></span></div>
+        ${t.from && rpBlank(r.listening) ? `<div class="rp-note" style="margin-top:.3rem">Using the ${rpMonthLabel(t.from)} result: ${t.score}/5 (${t.band}). Enter a new score to replace it.</div>` : ''}
+        ${t.band === 'Watch' ? `<div class="rp-warn">Watch band: re-run the listening check at the next monthly test.</div>` : ''}`;
+    }
+    if (t.key === 'pa') {
+      h += `<ul><li>Rhyme: does <i>cat</i> rhyme with <i>hat</i>? A word that rhymes with <i>sun</i>?</li><li>First sound: what sound does <i>map</i> begin with?</li><li>Blending: /d/ /o/ /g/.</li><li>Segmenting: say the sounds in <i>fish</i>.</li><li>Manipulation: say <i>cup</i> without the /c/.</li></ul>
+        <div class="rp-note">Oral only, no letters shown; a few minutes (Phonemic Awareness Training, Section 3).</div>
+        <div class="inl"><label for="rp-pa" style="margin:0">Result</label><select id="rp-pa" onchange="rpSetTest('pa',this.value)"><option value="">Not done</option>${Object.entries(RP_PA).map(([k, v]) => `<option value="${k}" ${r.pa === k ? 'selected' : ''}>${v.split('|')[0]}</option>`).join('')}</select></div>
+        ${r.pa && RP_PA[r.pa] ? `<div class="rp-note" style="margin-top:.3rem"><b>Start teaching:</b> ${RP_PA[r.pa].split('|')[1]}</div>` : ''}`;
+    }
+    if (t.key === 'miscue') h += `<div class="inl"><label style="margin:0;text-transform:none"><input type="checkbox" style="width:auto" ${r.miscue ? 'checked' : ''} onchange="rpSetTest('miscue',this.checked?'done':'')"> Miscue analysis done</label></div>`;
+    h += `</div>`;
+  });
+  return h;
+}
+function rpSetTest(k, v) {
+  if (k === 'listening') v = v === '' ? '' : String(Math.max(0, Math.min(5, Math.round(+v))));
+  rpCur.rec[k] = v; rpUpdate();
+}
+async function rpSave() {
+  if (!rpCur) return;
+  const d = rpDiagnose(rpCur.stu, rpCur.rec, rpMonth);
+  if (!d.valid) { document.getElementById('rp-err').textContent = d.partial ? 'Enter accuracy, rate and comprehension before saving.' : d.errors.join(' '); return; }
+  const r = rpCur.rec;
+  const rec = { form: r.form, rate: +r.rate, acc: +r.acc, comp: +r.comp, listening: rpBlank(r.listening) ? '' : +r.listening,
+                pa: r.pa || '', miscue: r.miscue || '', date: r.date || '', by: currentUser?.uid || '', byName: currentUser?.name || currentUser?.username || '', at: new Date().toISOString() };
+  const name = rpCur.stu.name;
+  try {
+    await db.ref(`${RP_PATH}/scores/${rpCur.stu.key}/${rpMonth}`).set(rec);
+    rpClose(); toast(`✅ ${name}: ${d.tier === 3 ? d.profile + ' ' + d.P.name : 'Tier ' + d.tier} saved`);
+  } catch (e) { toast('⚠️ Could not save: ' + e.message); }
+}
+async function rpDelete() {
+  if (!rpCur || !confirm(`Delete ${rpCur.stu.name}'s ${rpMonthLabel(rpMonth)} scores?`)) return;
+  try { await db.ref(`${RP_PATH}/scores/${rpCur.stu.key}/${rpMonth}`).remove(); rpClose(); toast('Scores deleted'); }
+  catch (e) { toast('⚠️ Could not delete: ' + e.message); }
+}
+</script>
+
 </body>
 </html>
