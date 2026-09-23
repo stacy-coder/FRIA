@@ -1197,6 +1197,7 @@
         </button>
       </div>
       <div id="owing-count-bar" style="display:none;margin-bottom:1rem;font-size:.84rem;color:var(--danger);font-weight:600;padding:.4rem .8rem;background:#fce8e6;border-radius:8px;"></div>
+      <div id="class-size-bar" class="cls-bar"></div>
       <div class="student-grid" id="student-grid"></div>
     </div>
   </div>
@@ -4638,6 +4639,41 @@ function toggleOwing() {
   renderStudentList();
 }
 
+function classCounts() {
+  const c = {}, inactive = {};
+  (students || []).forEach(s => {
+    const g = s.grade || 'Unassigned';
+    if ((s.accountStatus || 'Active') === 'Active') c[g] = (c[g] || 0) + 1;
+    else inactive[g] = (inactive[g] || 0) + 1;
+  });
+  return { c, inactive };
+}
+function renderClassSizes() {
+  const bar = document.getElementById('class-size-bar'); if (!bar) return;
+  const sel = document.getElementById('filter-grade');
+  const { c, inactive } = classCounts();
+  const grades = VALID_GRADES.slice();
+  Object.keys(c).concat(Object.keys(inactive)).forEach(g => { if (!grades.includes(g)) grades.push(g); });
+  const cur = sel ? sel.value : '';
+  const total = Object.values(c).reduce((a, b) => a + b, 0);
+  bar.innerHTML = `<button class="cls ${cur === '' ? 'on' : ''}" onclick="setGradeFilter('')">All classes <b>${total}</b></button>` +
+    grades.map(g => {
+      const n = c[g] || 0, inact = inactive[g] || 0;
+      const t = inact ? `${g}: ${n} active, plus ${inact} whose account is not active` : `${g}: ${n} student${n === 1 ? '' : 's'}`;
+      return `<button class="cls ${cur === g ? 'on' : ''} ${n ? '' : 'empty'}" title="${t}" onclick="setGradeFilter('${g.replace(/'/g, "\\'")}')">${g} <b>${n}</b>${inact ? `<i>+${inact}</i>` : ''}</button>`;
+    }).join('') +
+    `<span class="tot">Active students. A small +number means accounts that are not active (they still appear in the list below). Click a class to filter.</span>`;
+  if (sel) Array.from(sel.querySelectorAll('option')).forEach(o => {
+    const g = (o.dataset.grade !== undefined) ? o.dataset.grade : (o.value || '').trim();
+    o.dataset.grade = g;                      // keep the real grade; the label shows the count
+    o.value = g;
+    o.textContent = g === '' ? `All Grades (${total})` : `${g} (${c[g] || 0})`;
+  });
+}
+function setGradeFilter(g) {
+  const sel = document.getElementById('filter-grade'); if (sel) sel.value = g;
+  renderStudentList();
+}
 function renderStudentList() {
   const search  = (document.getElementById('search-input')?.value || '').toLowerCase();
   const gradeF  = document.getElementById('filter-grade')?.value || '';
@@ -4645,6 +4681,7 @@ function renderStudentList() {
   const grid    = document.getElementById('student-grid');
   const countBar = document.getElementById('owing-count-bar');
   if (!grid) return;
+  renderClassSizes();
 
   let filtered = students.filter(s => {
     const matchName  = s.name.toLowerCase().includes(search);
@@ -8231,6 +8268,15 @@ function toast(msg) {
 .rp-group h4{margin:0 0 .15rem;font-size:.95rem}
 .rp-group ul{margin:.4rem 0;padding-left:1.1rem;font-size:.85rem}
 .rp-group select{margin-top:.3rem}
+.cls-bar{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-bottom:1rem}
+.cls-bar .cls{border:1px solid var(--gray-2);background:var(--white);border-radius:14px;padding:.25rem .7rem;font:inherit;font-size:.8rem;cursor:pointer;color:var(--text);white-space:nowrap}
+.cls-bar .cls b{color:var(--green);margin-left:.25rem}
+.cls-bar .cls.on{background:var(--green);border-color:var(--green);color:#fff}
+.cls-bar .cls.on b{color:var(--gold)}
+.cls-bar .tot{font-size:.8rem;color:var(--gray-3);margin-left:.3rem}
+.cls-bar .cls.empty{opacity:.45}
+.cls-bar .cls i{font-style:normal;font-size:.72rem;color:var(--gray-3);margin-left:.2rem}
+.cls-bar .cls.on i{color:rgba(255,255,255,.75)}
 .rp-brand{display:flex;align-items:center;gap:1rem;background:var(--white);border-radius:14px;padding:.75rem 1.1rem;box-shadow:var(--shadow);margin-bottom:1rem}
 .rp-brand img{width:104px;height:104px;border-radius:50%;flex-shrink:0}
 .rp-brand .t{font-family:'Playfair Display',serif;color:var(--green);font-size:1.5rem;font-weight:700;line-height:1.15}
