@@ -160,6 +160,11 @@
     font-size: .82rem; font-weight: 600;
     padding: .25rem .65rem; border-radius: 20px; display: inline-block;
   }
+  .s-inactive { background: #f1f1f1; color: #6b6b6b; border: 1px solid #ddd; font-size:.74rem; font-weight:700; padding:.15rem .55rem; border-radius:20px; display:inline-block; margin-left:.4rem }
+  .student-card.inactive { opacity: .72; border-style: dashed; }
+  .status-panel { border:1.5px solid var(--gray-2); border-radius:10px; padding:.7rem .9rem; margin:0 0 1.2rem; background:var(--gray-1); font-size:.85rem }
+  .status-panel.out { background:#f6f2ea; border-color:#e0d3b8 }
+  .status-panel b { color: var(--text) }
   .balance-owed { background: #fce8e6; color: var(--danger); }
   .balance-clear { background: #e6f4ed; color: var(--success); }
 
@@ -4719,8 +4724,9 @@ function renderStudentList() {
     const balance = billed - paid;
     const cls = balance > 0 ? 'balance-owed' : 'balance-clear';
     const lbl = balance > 0 ? `GH₵ ${balance.toFixed(2)} owing` : '✔ Fully Paid';
-    return `<div class="student-card" onclick="openDetail('${s.id}')">
-      <div class="s-name">${s.name}</div>
+    const out = (s.accountStatus || 'Active') !== 'Active';
+    return `<div class="student-card ${out ? 'inactive' : ''}" onclick="openDetail('${s.id}')">
+      <div class="s-name">${s.name}${out ? '<span class="s-inactive">INACTIVE</span>' : ''}</div>
       <div class="s-meta">${s.grade} &nbsp;·&nbsp; ID: ${s.id}</div>
       <span class="s-balance ${cls}">${lbl}</span>
     </div>`;
@@ -4834,8 +4840,11 @@ function renderDetail(id) {
     familySiblings = students.filter(x => x.familyId === s.familyId && x.id !== s.id).length;
   }
 
+  const isOut = (s.accountStatus || 'Active') !== 'Active';
   let html = `<div class="card" id="printable-detail">
     <button class="btn btn-gold no-print" onclick="openEditStudent('${id}')" style="float:right;margin-left:.6rem">✏️ Edit Student Info</button>
+    <button class="btn ${isOut ? 'btn-primary' : ''} no-print" onclick="setStudentStatus('${id}', ${isOut ? "'Active'" : "'Inactive'"})" style="float:right;margin-left:.6rem"
+      title="${isOut ? 'Bring this student back onto the active roll' : 'Mark this student as withdrawn. Everything on this page is kept.'}">${isOut ? '↩️ Mark Active again' : '🚪 Mark Inactive (withdrawn)'}</button>
     <h2>👤 ${s.name}
       ${(disc.advancePct||0)>0 ? `<span class="discount-badge" style="margin-left:.6rem">⚡ ${disc.advancePct}% Early Pay</span>` : ''}
       ${(disc.familyPct||0)>0  ? `<span class="discount-badge family" style="margin-left:.4rem">👨‍👩‍👧 ${disc.familyPct}% Family</span>` : ''}
@@ -4857,6 +4866,14 @@ function renderDetail(id) {
     <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.85rem;color:var(--gray-3);margin-bottom:1.2rem">
       ${s.guardian ? `<span><strong>${s.guardianRel||'Father/Guardian'}:</strong> ${s.guardian}${s.phone?' &nbsp; 📞 '+s.phone:''}</span>` : ''}
       ${s.guardian2 ? `<span><strong>${s.guardian2Rel||'Mother/Guardian'}:</strong> ${s.guardian2}${s.phone2?' &nbsp; 📞 '+s.phone2:''}</span>` : ''}
+    </div>
+
+    <div class="status-panel ${isOut ? 'out' : ''}">
+      ${isOut
+        ? `<b>Account status: Inactive (withdrawn)</b>${s.withdrawnOn ? ` &nbsp;·&nbsp; from ${s.withdrawnOn}` : ''}${s.withdrawnReason ? ` &nbsp;·&nbsp; reason: ${escHtml(s.withdrawnReason)}` : ''}${s.withdrawnBy ? ` &nbsp;·&nbsp; recorded by ${escHtml(s.withdrawnBy)}` : ''}
+           <div style="color:var(--gray-3);margin-top:.25rem">This account is kept in full: fees, payments, bus records and notes are all still here. The student no longer counts in class sizes.</div>`
+        : `<b>Account status: Active</b><div style="color:var(--gray-3);margin-top:.25rem">If the student leaves, use “Mark Inactive (withdrawn)” above. Nothing is deleted.</div>`}
+      ${(s.statusLog && s.statusLog.length) ? `<div style="color:var(--gray-3);margin-top:.4rem;font-size:.8rem">History: ${s.statusLog.map(e => `${e.to === 'Active' ? 'returned' : 'withdrawn'} ${e.on}${e.by ? ' by ' + escHtml(e.by) : ''}${e.reason ? ' (' + escHtml(e.reason) + ')' : ''}`).join(' · ')}</div>` : ''}
     </div>
 
     <!-- DISCOUNT PANEL -->
@@ -5617,6 +5634,31 @@ function saveStudentEdits() {
   renderDashboard();
   if (document.getElementById('tab-bus')?.classList.contains('active')) renderBusTracker();
   toast(`✅ ${s.name}'s information updated.`);
+}
+
+function setStudentStatus(id, status) {
+  const s = students.find(x => x.id === id); if (!s) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const who = (currentUser && (currentUser.name || currentUser.username)) || '';
+  if (status === 'Inactive') {
+    if (!confirm(`Mark ${s.name} as INACTIVE (withdrawn)?\n\nThe whole account is kept — fees, payments, bus and notes stay exactly as they are, and you can make the student active again at any time. They stop counting in class sizes and in Reading Pathways.`)) return;
+    const reason = (prompt('Reason for leaving (optional) — for example: relocated, transferred to another school, completed JHS 3', '') || '').trim();
+    const on = (prompt('Date they left (YYYY-MM-DD)', today) || today).trim();
+    s.accountStatus = 'Inactive';
+    s.withdrawnOn = on; s.withdrawnReason = reason; s.withdrawnBy = who;
+    s.statusLog = (s.statusLog || []).concat([{ to: 'Inactive', on, by: who, reason }]);
+  } else {
+    if (!confirm(`Bring ${s.name} back onto the active roll?`)) return;
+    const on = (prompt('Date they returned (YYYY-MM-DD)', today) || today).trim();
+    s.accountStatus = 'Active';
+    s.returnedOn = on; s.withdrawnOn = ''; s.withdrawnReason = ''; s.withdrawnBy = '';
+    s.statusLog = (s.statusLog || []).concat([{ to: 'Active', on, by: who, reason: '' }]);
+  }
+  save();
+  renderDetail(id);
+  renderStudentList();
+  renderDashboard();
+  toast(status === 'Inactive' ? `🚪 ${s.name} marked inactive. The account is kept.` : `↩️ ${s.name} is active again.`);
 }
 
 function deleteStudent(id) {
