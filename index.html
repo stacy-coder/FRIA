@@ -8693,10 +8693,29 @@ function rpViewEnter(P) {
       <div class="summary-box"><div class="sb-label">Tier 3 · Far below</div><div class="sb-value">${c(3)}</div></div>
       <div class="summary-box"><div class="sb-label">Testing still needed</div><div class="sb-value">${ds.filter(d => d.pending).length}</div></div>
     </div>
+    ${rpProfileStrip(inView)}
     <p class="rp-note" style="margin:.6rem 0">Click a student to enter every story they read in ${rpMonthLabel(rpMonth)}: the actual seconds, the number of deviations and the comprehension score. The system scores each story, works out the grade level the pupil reads at, and gives the tier for their class, the profile and group, watch notes and any further testing. Class 3 to JHS Form 2 only (FRIA-GORT covers Basic 3–8).</p>
     <div class="rp-list" id="rp-list"></div>
   </div>`;
 }
+// how the class breaks down by profile, so groups can be formed as soon as everyone is entered
+function rpProfileStrip(inView) {
+  const ds = inView.map(p => p.L && p.L.d).filter(d => d && d.valid);
+  if (!ds.length) return '';
+  const counts = {};
+  ds.forEach(d => { const k = d.profile || 'none'; counts[k] = (counts[k] || 0) + 1; });
+  const order = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
+  const chips = order.filter(k => counts[k]).map(k =>
+    `<span class="rp-chip">${k} ${rpEsc(RP_PROF[k].name)} <b>${counts[k]}</b></span>`).join('');
+  const none = counts['none'] ? `<span class="rp-chip">No weakness found <b>${counts['none']}</b></span>` : '';
+  const need = ds.filter(d => d.pending).length;
+  const untested = inView.length - ds.length;
+  return `<div class="rp-bar" style="margin:.2rem 0 .6rem"><span class="rp-note" style="font-weight:700">Profiles from the latest result:</span>${chips}${none}
+    ${need ? `<span class="rp-chip need">Listening check needed <b>${need}</b></span>` : ''}
+    ${untested ? `<span class="rp-chip">Not tested yet <b>${untested}</b></span>` : ''}
+    <button class="btn btn-sm" onclick="rpGo('groups')">Form groups &amp; assign coaches →</button></div>`;
+}
+
 function rpChips(p) {
   const r = (rpData.scores[p.s.key] || {})[rpMonth];
   if (!r) {
@@ -8935,6 +8954,17 @@ function rpOpen(key) {
   const legacy = ex && ex.v !== 2 && !ex.stories;
   rpCur = { stu, rec: (ex && !legacy) ? { ...ex } : { form: rpMonthIdx(rpMonth) === 0 ? 'A' : 'D', listening: ex ? ex.listening ?? '' : '', pa: ex ? ex.pa || '' : '', miscue: '', date: new Date().toISOString().slice(0, 10) }, existing: !!ex };
   rpCur.rows = rpRowsFromRec(legacy ? null : ex, stu.grade);
+  // an earlier save that never reached the database is kept on this device: offer it back
+  try {
+    const draft = JSON.parse(localStorage.getItem('rpDraft:' + key + ':' + rpMonth) || 'null');
+    if (draft && draft.stories && (!ex || (ex.at || '') < (draft.at || ''))) {
+      if (confirm('There are entries for this pupil on this device that never reached the database (from ' +
+                  new Date(draft.at).toLocaleString('en-GB') + '). Put them back on screen?')) {
+        rpCur.rec = { ...rpCur.rec, form: draft.form, listening: draft.listening ?? '', pa: draft.pa || '', miscue: draft.miscue || '', date: draft.date || rpCur.rec.date };
+        rpCur.rows = rpRowsFromRec(draft, stu.grade);
+      } else { localStorage.removeItem('rpDraft:' + key + ':' + rpMonth); }
+    }
+  } catch (e) {}
   document.getElementById('rp-m-title').textContent = stu.name;
   document.getElementById('rp-m-meta').textContent = `${stu.id} · ${RP_GNAME(stu.grade)} · ${rpMonthLabel(rpMonth)}`;
   document.getElementById('rp-date').value = rpCur.rec.date || '';
@@ -8986,7 +9016,7 @@ function rpResultHTML(d) {
       <div class="pn">${rpEsc(rpProfLabel(d))} ${d.status === 'provisional' ? '<span class="rp-chip need">Provisional</span>' : '<span class="rp-chip t1">Profile complete</span>'}</div>
       <div class="why">${rpEsc(d.why)}. ${rpEsc(d.note)}</div>
       <span class="rp-pill">${rpEsc(RP_LINE[d.line])}</span><span class="rp-pill">Skill: ${rpEsc(d.P.need)}</span>
-      ${d.inGroup ? '<span class="rp-pill">Group with a Pathways Coach · Mon, Wed, Fri</span>' : '<span class="rp-pill">Tier 1: class teacher, no group</span>'}
+      ${d.inGroup ? `<span class="rp-pill">${rpEsc(rpGroupLine(rpCur.stu, d))}</span>` : '<span class="rp-pill">Tier 1: class teacher, no group</span>'}
       ${d.oneToOne && d.inGroup ? `<span class="rp-pill"><b>Also one-on-one (from October 2026):</b> ${rpEsc(d.oneToOne)}</span>` : ''}
       <div class="why" style="margin-top:.45rem"><b>Teaching:</b> Coach Manual ${d.profile}. <b>Caution:</b> ${rpEsc(d.P.caution)}</div></div>`;
   } else h += `<div class="rp-h3">Profile</div><p class="rp-note">No weakness found on the story at the expected level. ${d.note ? rpEsc(d.note) : ''}</p>`;
@@ -9012,6 +9042,16 @@ function rpResultHTML(d) {
   });
   return h + rpStoryTable(d);
 }
+// which group this pupil joins, and who coaches it
+function rpGroupLine(stu, d) {
+  try {
+    const P = rpPlacements(), gid = P.byKey[stu.key], g = P.groups.find(x => x.gid === gid);
+    const fam = d.line === 'FLU' ? 'Fluency & meaning' : d.line === 'GLB' ? 'Global Readers' : 'Decoding';
+    if (!g) return `${RP_GNAME(stu.grade)} · ${fam} group · Mon, Wed, Fri (appears once this result is saved)`;
+    return `${RP_GNAME(stu.grade)} · ${fam} group ${g.idx} · Mon, Wed, Fri` + (g.coach ? ` · coach ${g.coach.name}` : ' · no coach yet');
+  } catch (e) { return 'Group with a Pathways Coach · Mon, Wed, Fri'; }
+}
+
 function rpStoryTable(d) {
   if (!d.rows || !d.rows.length) return '';
   return `<div class="rp-h3">Each story, scored</div><div class="rp-scroll"><table class="rp-tbl"><tr><th>Story</th><th>Text gr</th><th>Rate</th><th>Acc</th><th>Fluency</th><th>Acc %</th><th>WCPM</th><th>Comp</th><th>Level</th></tr>` +
@@ -9025,20 +9065,43 @@ function rpSetTest(k, v) {
 }
 async function rpSave() {
   if (!rpCur) return;
+  const errBox = document.getElementById('rp-err');
+  const btn = document.querySelector('#rp-modal .ft .btn-primary');
+  const fail = msg => { errBox.textContent = msg; toast('⚠️ ' + msg); };
   const rec0 = rpRecFromCur(), d = rpDiagnose(rpCur.stu, rec0, rpMonth);
   const dups = rpCur.rows.map(r => r.s).filter((s, i, a) => a.indexOf(s) !== i);
-  if (dups.length) { document.getElementById('rp-err').textContent = `Story ${dups[0]} is listed twice.`; return; }
-  if (!d.valid && !d.incomplete) { document.getElementById('rp-err').textContent = d.partial ? 'Enter at least one story (seconds, deviations and comprehension) before saving.' : d.errors.join(' '); return; }
+  if (dups.length) return fail(`Story ${dups[0]} is listed twice, so nothing was saved.`);
+  if (!d.valid && !d.incomplete) return fail(d.partial ? 'Nothing saved: enter at least one story with seconds, deviations and comprehension.' : 'Nothing saved. ' + d.errors.join(' '));
   const stories = {};
   Object.entries(rec0.stories).forEach(([k, x]) => { stories[k] = { sec: +x.sec, dev: +x.dev, comp: +x.comp }; });
+  if (!Object.keys(stories).length) return fail('Nothing saved: no story rows were filled in.');
   const rec = { v: 2, form: rec0.form, stories, listening: rpBlank(rec0.listening) ? '' : +rec0.listening, pa: rec0.pa, miscue: rec0.miscue, date: rec0.date,
                 by: currentUser?.uid || '', byName: currentUser?.name || currentUser?.username || '', at: new Date().toISOString() };
-  const name = rpCur.stu.name;
+  const name = rpCur.stu.name, path = `${RP_PATH}/scores/${rpCur.stu.key}/${rpMonth}`;
+  // keep a copy on this device until the database confirms it
+  try { localStorage.setItem('rpDraft:' + rpCur.stu.key + ':' + rpMonth, JSON.stringify(rec)); } catch (e) {}
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  errBox.textContent = '';
   try {
-    await db.ref(`${RP_PATH}/scores/${rpCur.stu.key}/${rpMonth}`).set(rec);
-    rpClose(); toast(d.valid ? `✅ ${name}: Tier ${d.tier} · ${rpProfLabel(d)} saved` : `✅ ${name} saved: test lower stories to finish`);
-  } catch (e) { toast('⚠️ Could not save: ' + e.message); }
+    await db.ref(path).set(rec);
+    const back = await db.ref(path).once('value');          // read it back: proof it is really stored
+    const got = back.val();
+    if (!got || !got.stories || Object.keys(got.stories).length !== Object.keys(stories).length)
+      throw new Error('the database did not keep the record');
+    try { localStorage.removeItem('rpDraft:' + rpCur.stu.key + ':' + rpMonth); } catch (e) {}
+    rpClose();
+    toast(d.valid ? `✅ ${name} saved · Tier ${d.tier} · ${rpProfLabel(d)}` : `✅ ${name} saved: test lower stories to finish`);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    const msg = (e && e.message) ? e.message : 'unknown error';
+    errBox.textContent = 'NOT SAVED: ' + msg + '. Your entries are still on screen and kept on this device — press Save again, or check your internet connection.';
+    toast('⚠️ NOT saved: ' + msg);
+    console.error('Reading Pathways save failed', path, e);
+    return;
+  }
 }
+
 async function rpDelete() {
   if (!rpCur || !confirm(`Delete ${rpCur.stu.name}'s ${rpMonthLabel(rpMonth)} scores?`)) return;
   try { await db.ref(`${RP_PATH}/scores/${rpCur.stu.key}/${rpMonth}`).remove(); rpClose(); toast('Scores deleted'); }
