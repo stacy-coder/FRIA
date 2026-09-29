@@ -8545,8 +8545,50 @@ function rpDefaultMonth() {
   return rpMonthIdx(k) >= 0 ? k : RP_MONTHS[0][0];
 }
 
+// ── connection watch: a save can only finish when the database is reachable ──
+let rpOnline = null, rpConnWatch = false;
+function rpWatchConnection() {
+  if (rpConnWatch) return; rpConnWatch = true;
+  try {
+    db.ref('.info/connected').on('value', snap => {
+      const was = rpOnline; rpOnline = snap.val() === true;
+      const el = document.getElementById('rp-conn'); if (el) el.outerHTML = rpConnHTML();
+      if (rpOnline && was === false) rpFlushDrafts();
+    });
+  } catch (e) { rpOnline = null; }
+}
+const rpConnHTML = () => rpOnline === false
+  ? `<span id="rp-conn" class="rp-chip need">⚠️ No connection to the database — entries are held on this device</span>`
+  : rpOnline === true ? `<span id="rp-conn" class="rp-chip t1">Connected</span>` : `<span id="rp-conn" class="rp-chip">Checking connection…</span>`;
+// entries that never reached the database, kept on this device
+function rpDrafts() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('rpDraft:')) { const [, key, month] = k.split(':'); out.push({ k, key, month, rec: JSON.parse(localStorage.getItem(k)) }); }
+    }
+  } catch (e) {}
+  return out;
+}
+async function rpFlushDrafts(quiet) {
+  const list = rpDrafts(); if (!list.length) return 0;
+  let done = 0;
+  for (const d of list) {
+    try {
+      await Promise.race([db.ref(`${RP_PATH}/scores/${d.key}/${d.month}`).set(d.rec),
+                          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000))]);
+      localStorage.removeItem(d.k); done++;
+    } catch (e) { break; }
+  }
+  if (done && !quiet) toast(`✅ ${done} held entr${done === 1 ? 'y' : 'ies'} sent to the database`);
+  if (document.getElementById('tab-reading')?.classList.contains('active')) rpRender();
+  return done;
+}
+
 // ── load (realtime) ──
 function loadReadingPathways() {
+  rpWatchConnection();
   if (rpListening) return;
   rpListening = true;
   db.ref(RP_PATH).on('value', snap => {
@@ -8684,7 +8726,10 @@ function rpViewEnter(P) {
       <label style="margin:0">Testing month</label>
       <select onchange="rpSetMonth(this.value)">${RP_MONTHS.map(([k, l]) => `<option value="${k}" ${k === rpMonth ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <input id="rp-q" type="search" placeholder="Search name or ID" value="${rpEsc(rpQuery)}" style="flex:1;min-width:12rem">
+      ${rpConnHTML()}
     </div>
+    ${rpDrafts().length ? `<div class="rp-warn">${rpDrafts().length} entr${rpDrafts().length === 1 ? 'y is' : 'ies are'} held on this device and not yet in the database.
+      <button class="btn btn-sm" style="margin-left:.5rem" onclick="rpFlushDrafts()">Send them now</button></div>` : ''}
     <div class="rp-bar">${rpClassChips()}</div>
     <div class="summary-strip">
       <div class="summary-box"><div class="sb-label">Tested in ${rpMonthLabel(rpMonth)}</div><div class="sb-value">${ds.length} / ${inView.length}</div></div>
@@ -9084,8 +9129,10 @@ async function rpSave() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   errBox.textContent = '';
   try {
-    await db.ref(path).set(rec);
-    const back = await db.ref(path).once('value');          // read it back: proof it is really stored
+    const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('the database did not answer within ' + (ms / 1000) + ' seconds')), ms));
+    if (rpOnline === false) throw new Error('there is no connection to the database');
+    await Promise.race([db.ref(path).set(rec), timeout(12000)]);
+    const back = await Promise.race([db.ref(path).once('value'), timeout(12000)]);   // read it back: proof it is really stored
     const got = back.val();
     if (!got || !got.stories || Object.keys(got.stories).length !== Object.keys(stories).length)
       throw new Error('the database did not keep the record');
@@ -9095,8 +9142,8 @@ async function rpSave() {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = label; }
     const msg = (e && e.message) ? e.message : 'unknown error';
-    errBox.textContent = 'NOT SAVED: ' + msg + '. Your entries are still on screen and kept on this device — press Save again, or check your internet connection.';
-    toast('⚠️ NOT saved: ' + msg);
+    errBox.textContent = 'NOT SENT: ' + msg + '. Your entries are safe on this device and the window is still open. Close it and carry on if you like — the app will send them as soon as the connection returns, or press Save again to retry now.';
+    toast('⚠️ Held on this device: ' + msg);
     console.error('Reading Pathways save failed', path, e);
     return;
   }
