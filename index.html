@@ -8601,6 +8601,46 @@ function loadReadingPathways() {
   }, err => { console.error('Reading Pathways load error:', err); toast('⚠️ Reading Pathways could not load: ' + err.message); });
 }
 
+// ── does this computer's sign-in actually allow saving? ──
+async function rpDiagnose_saving() {
+  const box = document.getElementById('rp-diag'); if (!box) return;
+  const line = [];
+  const show = () => box.innerHTML = `<div class="rp-warn" style="background:var(--gray-1);color:var(--text)">
+    <b>Check saving</b><ul style="margin:.4rem 0 .4rem 1.1rem">${line.map(l => `<li>${l}</li>`).join('')}</ul>
+    <button class="btn btn-sm" onclick="document.getElementById('rp-diag').innerHTML=''">Close</button></div>`;
+  const step = async (label, fn) => {
+    line.push(`${label}: …`); show();
+    try { const r = await fn(); line[line.length - 1] = `✅ ${label}${r ? ': ' + r : ''}`; }
+    catch (e) { line[line.length - 1] = `❌ ${label}: <b>${rpEsc((e && e.message) || e)}</b>`; }
+    show();
+  };
+  const t = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('no answer within ' + ms / 1000 + 's')), ms));
+  const u = (typeof auth !== 'undefined' && auth.currentUser) ? auth.currentUser : null;
+  line.push(u ? `✅ Signed in as ${rpEsc(u.email || '')}` : '❌ Not signed in');
+  line.push(rpOnline === true ? '✅ Connected to the database' : rpOnline === false ? '❌ No connection to the database' : 'ℹ️ Connection state unknown');
+  show();
+  if (u) await step('Your user profile (role and status)', async () => {
+    const snap = await Promise.race([db.ref('users/' + u.uid).once('value'), t(10000)]);
+    const v = snap.val();
+    if (!v) throw new Error('no profile found for this account — an admin must approve it');
+    if (v.pending === true) throw new Error('the account is still waiting for approval');
+    if (v.disabled === true) throw new Error('the account has been turned off');
+    return `role ${v.role || 'unknown'}`;
+  });
+  const probe = `${RP_PATH}/_check/${(u && u.uid) || 'anon'}`;
+  await step('Write a test value', async () => { await Promise.race([db.ref(probe).set({ at: new Date().toISOString() }), t(12000)]); return 'written'; });
+  await step('Read it back', async () => {
+    const snap = await Promise.race([db.ref(probe).once('value'), t(12000)]);
+    if (!snap.val()) throw new Error('the value was not there when read back');
+    return 'found';
+  });
+  await step('Tidy up the test value', async () => { await Promise.race([db.ref(probe).remove(), t(12000)]); return 'removed'; });
+  line.push(line.some(l => l.startsWith('❌'))
+    ? 'Send this list to Stacy or Claude — the first ❌ is the cause.'
+    : 'All good: this computer can save. If a pupil still will not save, the entry itself is being refused — tell Claude the red message in the window.');
+  show();
+}
+
 // ── roster: active students in Class 3 – JHS Form 2 ──
 function rpRoster() {
   return (typeof students !== 'undefined' ? students : [])
@@ -8727,7 +8767,9 @@ function rpViewEnter(P) {
       <select onchange="rpSetMonth(this.value)">${RP_MONTHS.map(([k, l]) => `<option value="${k}" ${k === rpMonth ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <input id="rp-q" type="search" placeholder="Search name or ID" value="${rpEsc(rpQuery)}" style="flex:1;min-width:12rem">
       ${rpConnHTML()}
+      <button class="btn btn-sm" onclick="rpDiagnose_saving()" title="Test whether this computer can write to the database">🩺 Check saving</button>
     </div>
+    <div id="rp-diag"></div>
     ${rpDrafts().length ? `<div class="rp-warn">${rpDrafts().length} entr${rpDrafts().length === 1 ? 'y is' : 'ies are'} held on this device and not yet in the database.
       <button class="btn btn-sm" style="margin-left:.5rem" onclick="rpFlushDrafts()">Send them now</button></div>` : ''}
     <div class="rp-bar">${rpClassChips()}</div>
