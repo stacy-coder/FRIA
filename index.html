@@ -4101,6 +4101,14 @@ function buildMiniBill(s, term, billType, month, logoB64) {
     </tr>`;
   }
 
+  const advItems = advanceList(s, term);
+  const advSum = advanceTotal(s, term);
+  if (advSum > 0.005 && billType !== 'monthly') {
+    rows += `<tr style="background:#f4faf6">
+      <td colspan="2" style="font-size:.9em">Includes advance payment${advItems.length > 1 ? 's' : ''} received in ${[...new Set(advItems.map(a => a.fromTerm || 'an earlier term'))].join(', ')}${advItems[0] && advItems[0].receivedOn ? ' (' + advItems.map(a => a.receivedOn).join(', ') + ')' : ''}</td>
+      <td style="text-align:right;font-weight:600;color:#1a6b3a">${advSum.toFixed(2)}</td>
+      <td></td></tr>`;
+  }
   const balance  = totalBilled - totalPaid;
   const balClass = balance > 0.005 ? 'mini-bill-balance-owed' : 'mini-bill-balance-clear';
   const balLabel = balance > 0.005 ? `GH₵ ${balance.toFixed(2)} OWING` : '✔ PAID';
@@ -4876,6 +4884,32 @@ function renderDetail(id) {
       ${(s.statusLog && s.statusLog.length) ? `<div style="color:var(--gray-3);margin-top:.4rem;font-size:.8rem">History: ${s.statusLog.map(e => `${e.to === 'Active' ? 'returned' : 'withdrawn'} ${e.on}${e.by ? ' by ' + escHtml(e.by) : ''}${e.reason ? ' (' + escHtml(e.reason) + ')' : ''}`).join(' · ')}</div>` : ''}
     </div>
 
+    <!-- ADVANCE PAYMENTS PANEL — money received in an earlier term that pays for a later one -->
+    <div class="no-print" style="margin-bottom:1.2rem;border:1px solid #b3d4c4;background:#f4faf6;border-radius:10px;padding:.8rem 1rem">
+      <div style="font-size:.86rem;font-weight:700;color:var(--green);margin-bottom:.2rem">💰 Advance payments</div>
+      <p style="font-size:.78rem;color:var(--gray-3);margin:0 0 .7rem">
+        Money handed over in an earlier term that pays for a later one. It comes off the later term's bill, while the cash stays counted in the term it was actually received, so this term's cash report stays accurate.</p>
+      ${TERMS_LIST.map(t => advanceList(s, t).length ? `<div style="margin-bottom:.4rem;font-size:.82rem">
+          <strong>${t}:</strong> ${advanceList(s, t).map((a, i) => `<span style="background:#fff;border:1px solid #b3d4c4;border-radius:14px;padding:.2rem .6rem;margin-right:.3rem;display:inline-block">
+            GH₵ ${(a.amount || 0).toFixed(2)} · received ${a.receivedOn || '—'}${a.fromTerm ? ' (' + a.fromTerm + ')' : ''}${a.note ? ' · ' + escHtml(a.note) : ''}${a.alreadyBanked ? '' : ' · logged as cash on that date'}
+            ${currentUser && currentUser.role === 'admin' ? `<button onclick="removeAdvance('${id}','${t}',${i})" title="Remove" style="background:none;border:none;color:var(--danger);cursor:pointer">✕</button>` : ''}
+          </span>`).join('')}</div>` : '').join('')}
+      ${currentUser && currentUser.role === 'admin' ? `<div class="form-grid" style="margin-top:.5rem">
+        <div><label>Amount paid in advance (GH₵)</label><input type="number" min="0" step="0.01" id="adv-amount-${id}" placeholder="0.00"/></div>
+        <div><label>Pays for</label><select id="adv-term-${id}">${TERMS_LIST.map(t => `<option ${t === activeTerm ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div><label>Received during</label><select id="adv-from-${id}">${TERMS_LIST.map(t => `<option ${t === 'Term 3' ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div><label>Date received</label><input type="date" id="adv-date-${id}"/></div>
+        <div><label>Method</label><select id="adv-method-${id}"><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></div>
+        <div><label>Note (optional)</label><input type="text" id="adv-note-${id}" placeholder="e.g. paid in June for this term"/></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem;margin-top:.6rem;text-transform:none;font-weight:600">
+        <input type="checkbox" id="adv-banked-${id}" checked style="width:16px;height:16px;accent-color:var(--green)"/>
+        This money was already recorded in the earlier term's cash
+      </label>
+      <p style="font-size:.75rem;color:var(--gray-3);margin:.2rem 0 .6rem">Leave it ticked if the payment was already entered when it came in. Untick it only if the money never went into the system, and it will be logged as cash on the date above, inside the earlier term.</p>
+      <button class="btn btn-primary btn-sm" onclick="recordAdvance('${id}')">💰 Apply advance payment</button>` : ''}
+    </div>
+
     <!-- DISCOUNT PANEL -->
     <div class="discount-panel no-print">
       <h3>🏷️ Discounts & Sponsorship for ${s.name}</h3>
@@ -5465,6 +5499,92 @@ function payExtrasLast(s, term, remaining, breakdown) {
     remaining -= apply;
   });
   return remaining;
+}
+
+// Spread an amount across arrears, fee categories and extras. Used by an ordinary
+// payment and by an advance payment recorded from an earlier term.
+function distributeAmount(s, term, amount) {
+  const breakdown = [];
+  let remaining = amount;
+  if (!s.fees[term]) s.fees[term] = {};
+  const totalDiscPct = Math.min(100, getDiscountPct(s.discounts || {}));
+  const isJHS = s.grade.startsWith('JHS');
+  const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
+  remaining = payArrearsFirst(s, term, remaining, breakdown);
+  getPaymentOrder().filter(cat => !(cat.jhsOnly && !isJHS)).forEach(cat => {
+    if (remaining <= 0.005) return;
+    if (!s.fees[term][cat.key]) s.fees[term][cat.key] = { billed: gradeSched[cat.key] || 0, paid: 0 };
+    const effBilled = (s.fees[term][cat.key].billed || gradeSched[cat.key] || 0) * catDiscFactor(cat.key, totalDiscPct);
+    const alreadyPaid = s.fees[term][cat.key].paid || 0;
+    const catBalance = Math.max(0, effBilled - alreadyPaid);
+    if (catBalance <= 0.005) return;
+    const apply = Math.min(remaining, catBalance);
+    s.fees[term][cat.key].paid = alreadyPaid + apply;
+    remaining -= apply;
+    breakdown.push({ key: cat.key, label: cat.label, amount: apply });
+  });
+  remaining = payExtrasLast(s, term, remaining, breakdown);
+  return { breakdown, applied: breakdown.reduce((t, b) => t + b.amount, 0), leftover: remaining };
+}
+
+// ══════════════════════════════════════════════════════════════
+// ADVANCE PAYMENTS — money handed over in an earlier term that pays for a later one.
+// It reduces the later term's bill, but the cash stays in the term it was received,
+// so this term's cash report is not inflated.
+// ══════════════════════════════════════════════════════════════
+const TERMS_LIST = ['Term 1', 'Term 2', 'Term 3'];
+function advanceList(s, term) { return ((s.advances || {})[term] || []); }
+function advanceTotal(s, term) { return advanceList(s, term).reduce((t, a) => t + (a.amount || 0), 0); }
+async function recordAdvance(studentId) {
+  if (!requireAdmin('record advance payments')) return;
+  const s = students.find(x => x.id === studentId); if (!s) return;
+  const g = id => document.getElementById(id + '-' + studentId);
+  const amount = parseFloat(g('adv-amount')?.value) || 0;
+  const term = g('adv-term')?.value;
+  const received = g('adv-date')?.value;
+  const fromTerm = g('adv-from')?.value;
+  const method = g('adv-method')?.value || 'cash';
+  const note = (g('adv-note')?.value || '').trim();
+  const alreadyBanked = g('adv-banked')?.checked;
+  if (amount <= 0) return toast('⚠️ Enter the amount that was paid in advance.');
+  if (!received) return toast('⚠️ Enter the date the money was received.');
+  if (fromTerm === term) return toast('⚠️ An advance payment comes from an earlier term than the one it pays for.');
+  const { breakdown, applied, leftover } = distributeAmount(s, term, amount);
+  if (applied <= 0) return toast('⚠️ Nothing owing for ' + term + ', so there is nothing for this advance to pay.');
+  if (!s.advances) s.advances = {};
+  if (!s.advances[term]) s.advances[term] = [];
+  const rec = { amount: applied, receivedOn: received, fromTerm, method, note,
+                recordedBy: (currentUser && (currentUser.name || currentUser.username)) || '', at: new Date().toISOString(),
+                alreadyBanked: !!alreadyBanked, breakdown };
+  s.advances[term].push(rec);
+  // if the cash was never entered in the system, log it on the day it was received,
+  // so the earlier term's cash report is right and this term's is untouched
+  if (!alreadyBanked) {
+    if (!s.paymentLog) s.paymentLog = [];
+    s.paymentLog.push({ receiptNo: genReceiptNo(), date: new Date(received + 'T09:00:00').toISOString(),
+      term: fromTerm, category: 'Advance payment for ' + term, breakdown, amount: applied, method,
+      momoRef: '', advanceFor: term });
+  }
+  save();
+  renderDetail(studentId); renderDashboard();
+  toast(`✅ GH₵ ${applied.toFixed(2)} advance applied to ${term}` + (leftover > 0.005 ? ` · GH₵ ${leftover.toFixed(2)} not used (nothing left owing)` : ''));
+}
+function removeAdvance(studentId, term, idx) {
+  if (!requireAdmin('remove advance payments')) return;
+  const s = students.find(x => x.id === studentId); if (!s) return;
+  const a = advanceList(s, term)[idx]; if (!a) return;
+  if (!confirm(`Remove the advance payment of GH₵ ${(a.amount || 0).toFixed(2)} for ${term}?\n\nThe amount goes back onto ${term}'s bill as unpaid. Any receipt already given to the family stays in the payment history.`)) return;
+  // take the money back off the lines it paid
+  (a.breakdown || []).forEach(b => {
+    if (b.key === '__arrears') { s.arrearsPaid[term] = Math.max(0, (s.arrearsPaid[term] || 0) - b.amount); return; }
+    if (String(b.key).startsWith('__extra:')) {
+      const e = (s.extras || []).find(x => '__extra:' + x.id === b.key); if (e) e.paid = Math.max(0, (e.paid || 0) - b.amount); return;
+    }
+    if (s.fees[term] && s.fees[term][b.key]) s.fees[term][b.key].paid = Math.max(0, (s.fees[term][b.key].paid || 0) - b.amount);
+  });
+  s.advances[term].splice(idx, 1);
+  save(); renderDetail(studentId); renderDashboard();
+  toast('Advance payment removed');
 }
 
 function recordPayment(studentId, term, catKey) {
@@ -6340,6 +6460,17 @@ function openBill(studentId, term) {
       <td style="text-align:right;font-weight:600;color:${eBal>0?'#c0392b':'#1a6b3a'}">GH₵ ${eBal.toFixed(2)}</td>
     </tr>`;
   });
+
+  // Advance payments already applied to this term, shown so the family can see why the bill is lower
+  const advOnBill = advanceList(s, term), advOnBillSum = advanceTotal(s, term);
+  if (advOnBillSum > 0.005) {
+    rows += `<tr style="background:#f4faf6">
+      <td><em>💰 Advance payment${advOnBill.length > 1 ? 's' : ''} received ${advOnBill.map(a => (a.receivedOn || '') + (a.fromTerm ? ' (' + a.fromTerm + ')' : '')).join(', ')}</em></td>
+      <td style="text-align:right">—</td>
+      <td style="text-align:right;color:#1a6b3a;font-weight:600">GH₵ ${advOnBillSum.toFixed(2)}</td>
+      <td style="text-align:right">—</td>
+    </tr>`;
+  }
 
   // Monthly breakdown on bill
   const months = monthlyBreakdown(s, term);
