@@ -3242,7 +3242,7 @@ function addSiblingRow(studentId) {
 const ONE_TIME_FEES = {
   'friday_wear': { label: 'Friday Wear', upperJHS: 75, other: 70 },
   'sports_wear': { label: 'Sports Wear', upperJHS: 75, other: 70 },
-  'badge':       { label: 'School Badge', all: 20 },
+  'badge':       { label: 'School Badge', all: 15 },
 };
 
 function getGradeGroup(grade) {
@@ -3263,7 +3263,7 @@ function getOneTimeFees(grade) {
   return {
     friday_wear: upper ? 75 : 70,
     sports_wear: upper ? 75 : 70,
-    badge: 20,
+    badge: 15,
   };
 }
 
@@ -4888,10 +4888,13 @@ function renderDetail(id) {
     <div class="no-print" style="margin-bottom:1.2rem;border:1px solid #b3d4c4;background:#f4faf6;border-radius:10px;padding:.8rem 1rem">
       <div style="font-size:.86rem;font-weight:700;color:var(--green);margin-bottom:.2rem">💰 Advance payments</div>
       <p style="font-size:.78rem;color:var(--gray-3);margin:0 0 .7rem">
-        Money handed over in an earlier term that pays for a later one. It comes off the later term's bill, while the cash stays counted in the term it was actually received, so this term's cash report stays accurate.</p>
+        Money handed over in an earlier term that pays for a later one. It comes off the later term's bill, while the cash stays counted in the term it was actually received, so this term's cash report stays accurate. Anything left over after a term is paid up rolls on to the next term by itself, and school fees and bus fares can both be paid ahead.</p>
+      ${(s.credit > 0.005) ? `<div style="background:#fffdf5;border:1px solid #ffe082;border-radius:8px;padding:.5rem .7rem;margin-bottom:.6rem;font-size:.82rem">
+        💳 <strong>Credit held on this account: GH₵ ${s.credit.toFixed(2)}</strong> — more than the bills so far. It will be used as soon as there is something to pay.
+        <button class="btn btn-sm" style="margin-left:.4rem" onclick="useCredit('${id}')">Use it now</button></div>` : ''}
       ${TERMS_LIST.map(t => advanceList(s, t).length ? `<div style="margin-bottom:.4rem;font-size:.82rem">
           <strong>${t}:</strong> ${advanceList(s, t).map((a, i) => `<span style="background:#fff;border:1px solid #b3d4c4;border-radius:14px;padding:.2rem .6rem;margin-right:.3rem;display:inline-block">
-            GH₵ ${(a.amount || 0).toFixed(2)} · received ${a.receivedOn || '—'}${a.fromTerm ? ' (' + a.fromTerm + ')' : ''}${a.note ? ' · ' + escHtml(a.note) : ''}${a.alreadyBanked ? '' : ' · logged as cash on that date'}
+            GH₵ ${(a.amount || 0).toFixed(2)} · received ${a.receivedOn || '—'}${a.fromTerm ? ' (' + a.fromTerm + ')' : ''}${a.carriedFrom ? ' · carried on from ' + a.carriedFrom : ''}${a.note ? ' · ' + escHtml(a.note) : ''}${a.alreadyBanked ? '' : ' · logged as cash on that date'}
             ${currentUser && currentUser.role === 'admin' ? `<button onclick="removeAdvance('${id}','${t}',${i})" title="Remove" style="background:none;border:none;color:var(--danger);cursor:pointer">✕</button>` : ''}
           </span>`).join('')}</div>` : '').join('')}
       ${currentUser && currentUser.role === 'admin' ? `<div class="form-grid" style="margin-top:.5rem">
@@ -4900,6 +4903,11 @@ function renderDetail(id) {
         <div><label>Received during</label><select id="adv-from-${id}">${TERMS_LIST.map(t => `<option ${t === 'Term 3' ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
         <div><label>Date received</label><input type="date" id="adv-date-${id}"/></div>
         <div><label>Method</label><select id="adv-method-${id}"><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></div>
+        <div><label>Pays for what</label><select id="adv-applyto-${id}">
+          <option value="fees">School fees (then bus if fees are clear)</option>
+          <option value="bus">Bus fare only</option>
+          <option value="both_bus_first">Bus fare first, then school fees</option>
+        </select></div>
         <div><label>Note (optional)</label><input type="text" id="adv-note-${id}" placeholder="e.g. paid in June for this term"/></div>
       </div>
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem;margin-top:.6rem;text-transform:none;font-weight:600">
@@ -5535,6 +5543,47 @@ function distributeAmount(s, term, amount) {
 const TERMS_LIST = ['Term 1', 'Term 2', 'Term 3'];
 function advanceList(s, term) { return ((s.advances || {})[term] || []); }
 function advanceTotal(s, term) { return advanceList(s, term).reduce((t, a) => t + (a.amount || 0), 0); }
+// Spread an advance over the chosen term and, if money is left, the terms after it.
+function applyAdvanceToFees(s, startTerm, amount, meta) {
+  let remaining = amount; const applied = [];
+  const from = TERMS_LIST.indexOf(startTerm);
+  for (let i = Math.max(0, from); i < TERMS_LIST.length && remaining > 0.005; i++) {
+    const term = TERMS_LIST[i];
+    const { breakdown, applied: used, leftover } = distributeAmount(s, term, remaining);
+    if (used > 0.005) {
+      if (!s.advances) s.advances = {};
+      if (!s.advances[term]) s.advances[term] = [];
+      s.advances[term].push({ ...meta, amount: used, carriedFrom: i === from ? null : startTerm, breakdown });
+      applied.push({ term, amount: used, breakdown });
+    }
+    remaining = leftover;
+  }
+  return { applied, remaining };
+}
+// Bus fares can be paid ahead too: the credit sits in the term it pays for.
+function applyAdvanceToBus(s, startTerm, amount, meta) {
+  let remaining = amount; const applied = [];
+  const rate = busRate();
+  const from = TERMS_LIST.indexOf(startTerm);
+  for (let i = Math.max(0, from); i < TERMS_LIST.length && remaining > 0.005; i++) {
+    const term = TERMS_LIST[i];
+    const sum = busTermSummary(s.id, term);
+    const owing = Math.max(0, sum.balance);
+    if (owing <= 0.005) continue;
+    const use = Math.min(remaining, owing);
+    const k = fbKey(s.id), id = 'bp-adv-' + Date.now() + '-' + i;
+    const rec = { plan: 'advance', units: 1, days: rate > 0 ? Math.round(use / rate) : 0, amount: use, discount: 0,
+                  date: meta.receivedOn, receiptNo: meta.receiptNo || '', method: meta.method || 'cash',
+                  advanceFrom: meta.fromTerm, noCash: !!meta.alreadyBanked, note: meta.note || '' };
+    busFeePayments[k] = busFeePayments[k] || {};
+    busFeePayments[k][term] = busFeePayments[k][term] || {};
+    busFeePayments[k][term][id] = rec;
+    dbSet(`appData/busFeePayments/${k}/${term}/${id}`, rec).catch(e => toast('⚠️ Bus advance not saved: ' + e.message));
+    applied.push({ term, amount: use, bus: true });
+    remaining -= use;
+  }
+  return { applied, remaining };
+}
 async function recordAdvance(studentId) {
   if (!requireAdmin('record advance payments')) return;
   const s = students.find(x => x.id === studentId); if (!s) return;
@@ -5545,29 +5594,62 @@ async function recordAdvance(studentId) {
   const fromTerm = g('adv-from')?.value;
   const method = g('adv-method')?.value || 'cash';
   const note = (g('adv-note')?.value || '').trim();
+  const applyTo = g('adv-applyto')?.value || 'fees';
   const alreadyBanked = g('adv-banked')?.checked;
   if (amount <= 0) return toast('⚠️ Enter the amount that was paid in advance.');
   if (!received) return toast('⚠️ Enter the date the money was received.');
-  if (fromTerm === term) return toast('⚠️ An advance payment comes from an earlier term than the one it pays for.');
-  const { breakdown, applied, leftover } = distributeAmount(s, term, amount);
-  if (applied <= 0) return toast('⚠️ Nothing owing for ' + term + ', so there is nothing for this advance to pay.');
-  if (!s.advances) s.advances = {};
-  if (!s.advances[term]) s.advances[term] = [];
-  const rec = { amount: applied, receivedOn: received, fromTerm, method, note,
-                recordedBy: (currentUser && (currentUser.name || currentUser.username)) || '', at: new Date().toISOString(),
-                alreadyBanked: !!alreadyBanked, breakdown };
-  s.advances[term].push(rec);
-  // if the cash was never entered in the system, log it on the day it was received,
-  // so the earlier term's cash report is right and this term's is untouched
-  if (!alreadyBanked) {
-    if (!s.paymentLog) s.paymentLog = [];
-    s.paymentLog.push({ receiptNo: genReceiptNo(), date: new Date(received + 'T09:00:00').toISOString(),
-      term: fromTerm, category: 'Advance payment for ' + term, breakdown, amount: applied, method,
-      momoRef: '', advanceFor: term });
+  const meta = { receivedOn: received, fromTerm, method, note, alreadyBanked: !!alreadyBanked,
+                 recordedBy: (currentUser && (currentUser.name || currentUser.username)) || '', at: new Date().toISOString(),
+                 receiptNo: alreadyBanked ? '' : genReceiptNo() };
+  let remaining = amount; const done = [];
+  if (applyTo === 'bus' || applyTo === 'both_bus_first') {
+    const r = applyAdvanceToBus(s, term, remaining, meta); done.push(...r.applied); remaining = r.remaining;
   }
+  if (applyTo !== 'bus') {
+    const r = applyAdvanceToFees(s, term, remaining, meta); done.push(...r.applied); remaining = r.remaining;
+  }
+  if (applyTo === 'fees' && remaining > 0.005) {          // fees are clear: offer the rest to the bus
+    const r = applyAdvanceToBus(s, term, remaining, meta); done.push(...r.applied); remaining = r.remaining;
+  }
+  const usedTotal = amount - remaining;
+  if (usedTotal <= 0.005) {
+    keepCredit(s, remaining, meta);
+    save(); renderDetail(studentId); renderDashboard();
+    return toast(`💳 Nothing is owing, so GH₵ ${remaining.toFixed(2)} is held as credit on the account and will be used as soon as a bill appears.`);
+  }
+  // the cash itself: logged on the day it came in, inside the earlier term, unless it was already entered then
+  const feeParts = done.filter(d => !d.bus);
+  if (!alreadyBanked && feeParts.length) {
+    if (!s.paymentLog) s.paymentLog = [];
+    s.paymentLog.push({ receiptNo: meta.receiptNo, date: new Date(received + 'T09:00:00').toISOString(),
+      term: fromTerm, category: 'Advance payment for ' + feeParts.map(f => f.term).join(', '),
+      breakdown: feeParts.flatMap(f => f.breakdown || []), amount: feeParts.reduce((t, f) => t + f.amount, 0),
+      method, momoRef: '', advanceFor: feeParts.map(f => f.term).join(', ') });
+  }
+  if (remaining > 0.005) keepCredit(s, remaining, meta);
   save();
   renderDetail(studentId); renderDashboard();
-  toast(`✅ GH₵ ${applied.toFixed(2)} advance applied to ${term}` + (leftover > 0.005 ? ` · GH₵ ${leftover.toFixed(2)} not used (nothing left owing)` : ''));
+  const where = done.map(d => `GH₵ ${d.amount.toFixed(2)} to ${d.term}${d.bus ? ' bus fare' : ''}`).join(', ');
+  toast(`✅ Advance applied: ${where}` + (remaining > 0.005 ? ` · GH₵ ${remaining.toFixed(2)} kept as credit for later` : ''));
+}
+// Money with nothing left to pay is held as credit and used as soon as a bill appears.
+function keepCredit(s, amount, meta) {
+  if (amount <= 0.005) return;
+  if (!s.creditLog) s.creditLog = [];
+  s.creditLog.push({ amount, ...meta });
+  s.credit = (s.credit || 0) + amount;
+}
+function useCredit(studentId) {
+  const s = students.find(x => x.id === studentId); if (!s || !(s.credit > 0.005)) return;
+  const meta = { receivedOn: new Date().toISOString().slice(0, 10), fromTerm: 'credit', method: 'credit',
+                 note: 'from credit held on the account', alreadyBanked: true, at: new Date().toISOString(), receiptNo: '' };
+  let remaining = s.credit; const done = [];
+  let r = applyAdvanceToFees(s, TERMS_LIST[0], remaining, meta); done.push(...r.applied); remaining = r.remaining;
+  r = applyAdvanceToBus(s, TERMS_LIST[0], remaining, meta); done.push(...r.applied); remaining = r.remaining;
+  s.credit = remaining;
+  save(); renderDetail(studentId); renderDashboard();
+  toast(done.length ? `✅ Credit used: ${done.map(d => `GH₵ ${d.amount.toFixed(2)} to ${d.term}${d.bus ? ' bus' : ''}`).join(', ')}`
+                    : 'Nothing is owing yet, so the credit is still being held.');
 }
 function removeAdvance(studentId, term, idx) {
   if (!requireAdmin('remove advance payments')) return;
@@ -5946,6 +6028,7 @@ function renderDailyReport() {
     Object.entries(busFeePayments[fbKey(s.id)] || {}).forEach(([term, recs]) => {
       Object.values(recs || {}).forEach(payment => {
         if (!payment || !payment.date) return;
+        if (payment.noCash) return;                      // an advance already counted when the cash came in
         if (payment.date.slice(0,10) !== selectedDate) return;
         busEntries.push({
           studentName: s.name, grade: s.grade,
