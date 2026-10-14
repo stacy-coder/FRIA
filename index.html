@@ -4572,6 +4572,10 @@ function forceSync() {
     }
 
     if (data.feeSchedule) feeSchedule = data.feeSchedule;
+    // Promo codes live at appData/promoCodes as { CODE: pct }. Nothing used to
+    // load them, so validatePromoCode always returned 0 and any code typed into
+    // the discount panel quietly saved a 0% discount.
+    window._promoCodes = data.promoCodes || {};
     activeTerm = data.activeTerm || activeTerm;
     storeProducts = data.storeProducts ? Object.values(data.storeProducts) : [];
     storeSales    = data.storeSales    ? Object.values(data.storeSales)    : [];
@@ -5001,6 +5005,27 @@ function renderDetail(id) {
           <button onclick="addSiblingRow('${id}')" class="btn btn-sm" style="font-size:.78rem;margin-top:.2rem">+ Add Sibling</button>
         </div>
       </div>
+      <!-- Early payment discount, by hand -->
+      <div style="margin-bottom:.8rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">⚡ Early Payment Discount</div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
+          ${TERMS.map(t => `<label style="display:flex;align-items:center;gap:.35rem;font-size:.86rem;font-weight:600">${t}
+            <input type="number" id="disc-early-${t.replace(/ /g,'-')}-${id}" value="${(disc.earlyPay && disc.earlyPay[t]) || ''}" min="0" max="100" placeholder="0"
+              style="width:56px;padding:.35rem .5rem;border-radius:6px;border:1.5px solid var(--gray-2);font-size:.84rem"/>%
+          </label>`).join('')}
+        </div>
+        <div style="font-size:.76rem;color:var(--gray-3);margin-top:.35rem">Filled in by itself when a parent settles the whole term inside the window set in Settings. Type it here when they paid early but it was recorded late, or outside the window. It applies to that term only, and it adds to the family discount.</div>
+      </div>
+      <!-- Any other discount -->
+      <div style="margin-bottom:.8rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">🤝 Other Discount</div>
+        <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+          <input type="number" id="disc-other-${id}" value="${disc.otherPct||''}" min="0" max="100" placeholder="0"
+            style="width:62px;padding:.4rem .5rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem"/><span style="font-size:.88rem;font-weight:600">%</span>
+          <input type="text" id="disc-otherwhy-${id}" value="${disc.otherReason||''}" placeholder="Reason — this prints on the bill"
+            style="flex:1;min-width:200px;padding:.4rem .7rem;border-radius:7px;border:1.5px solid var(--gray-2);font-size:.88rem"/>
+        </div>
+      </div>
       <!-- Promo code -->
       <div style="margin-bottom:.8rem">
         <div style="font-size:.8rem;font-weight:700;color:var(--gray-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">🏷️ Promotional Discount Code</div>
@@ -5405,6 +5430,15 @@ function saveDiscounts(id) {
   const promoCode = document.getElementById(`disc-promo-${id}`)?.value.trim() || '';
   const promoDisc = validatePromoCode(promoCode);
 
+  // Early payment, set by hand, per term
+  const earlyPay = Object.assign({}, (s.discounts && s.discounts.earlyPay) || {});
+  TERMS.forEach(t => {
+    const v = parseFloat(document.getElementById(`disc-early-${t.replace(/ /g,'-')}-${id}`)?.value) || 0;
+    if (v > 0) earlyPay[t] = Math.min(100, v); else delete earlyPay[t];
+  });
+  const otherPct    = Math.min(100, parseFloat(document.getElementById(`disc-other-${id}`)?.value) || 0);
+  const otherReason = document.getElementById(`disc-otherwhy-${id}`)?.value.trim() || '';
+
   // Sibling records
   const siblingRows = document.querySelectorAll(`#siblings-${id} .sibling-row`);
   const siblings = [];
@@ -5421,11 +5455,20 @@ function saveDiscounts(id) {
     multiChild15: mc15,
     promoCode,
     promoDiscPct: promoDisc,
+    earlyPay,
+    otherPct,
+    otherReason,
     siblings
   });
   save();
   const total = getDiscountPct(s.discounts, activeTerm);
-  toast(`✅ Discounts saved — ${total}% total applied to ${s.name}`);
+  // Say so plainly when a typed code means nothing, instead of saving 0% and
+  // leaving the balance unchanged with no explanation.
+  if (promoCode && !promoDisc) {
+    toast(`⚠️ Saved, but the code ${promoCode.toUpperCase()} is not set up, so it adds 0%. Use Other Discount to give it by hand. ${s.name} is on ${total}% for ${activeTerm}.`);
+  } else {
+    toast(`✅ Discounts saved — ${total}% on ${activeTerm} for ${s.name}`);
+  }
   renderDetail(id);
   renderDashboard();
 }
@@ -5448,7 +5491,8 @@ function getDiscountPct(disc, term) {
   // hand or carried in from a bill import, and still counts for every term.
   const earlyTerm   = (term && disc.earlyPay && disc.earlyPay[term]) || 0;
   const earlyPct    = (disc.earlyPayPct || 0) + earlyTerm;
-  return Math.min(100, familyDisc + promoDisc + scholarPct + earlyPct);
+  const otherPct    = disc.otherPct || 0;   // given by hand, with a reason
+  return Math.min(100, familyDisc + promoDisc + scholarPct + earlyPct + otherPct);
 }
 // The parts behind the total, so a bill can name each one.
 function discountParts(disc, term) {
@@ -5458,6 +5502,8 @@ function discountParts(disc, term) {
     early:   (disc.earlyPayPct || 0) + ((term && disc.earlyPay && disc.earlyPay[term]) || 0),
     scholar: disc.scholarshipPct || 0,
     promo:   disc.promoDiscPct   || 0,
+    other:   disc.otherPct       || 0,
+    otherReason: disc.otherReason || '',
   };
 }
 
@@ -6610,6 +6656,7 @@ function openBill(studentId, term) {
       ${D.family  ? `<span style="background:#fff8e1;color:#b8690f;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">👨‍👩‍👧 Family Discount: ${D.family}%</span>` : ''}
       ${D.scholar ? `<span style="background:#e3f2fd;color:#1565c0;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">🎓 Scholarship: ${D.scholar}%</span>` : ''}
       ${D.promo   ? `<span style="background:#f3e5f5;color:#6a1b9a;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">🏷️ Promotion: ${D.promo}%</span>` : ''}
+      ${D.other   ? `<span style="background:#e0f2f1;color:#00695c;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">🤝 ${D.otherReason || 'Other Discount'}: ${D.other}%</span>` : ''}
       <span style="background:#fce8e6;color:#c0392b;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block;font-weight:700">Total Discount: ${totalDiscPct}% (−GH₵ ${discAmt.toFixed(2)})</span>
     </div>` : ''}
 
