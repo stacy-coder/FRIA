@@ -3087,24 +3087,38 @@ function submitPayModal() {
   const term = _payTerm;
   if (!s.fees[term]) s.fees[term] = {};
 
-  const disc       = s.discounts || {};
+  if (!s.discounts) s.discounts = {};
+  const disc       = s.discounts;
   const isJHS      = s.grade.startsWith('JHS');
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
 
-  // Check early payment discount
+  // Early payment discount.
+  // Two things were wrong here before. The parent had to hand over the balance
+  // worked out WITHOUT the early discount, so a child already on a family
+  // discount could never reach the bar; and once earned the discount lived only
+  // in this function, so it shaped how that one payment was spread and then
+  // disappeared — the bill went on showing the family discount alone. Now the
+  // bar is the balance the office actually quotes (family discount and early
+  // discount both taken off), and the earned percentage is written onto the
+  // student for that term, so every later bill, statement and report carries it.
   const payDate = new Date(dateVal);
+  const earlyAlready = (disc.earlyPay && disc.earlyPay[term]) || 0;
   let earlyDisc = 0;
-  if (earlyPayDiscount && earlyPayDiscount.active) {
+  if (earlyPayDiscount && earlyPayDiscount.active && !earlyAlready) {
     const start = new Date(earlyPayDiscount.start);
     const end   = new Date(earlyPayDiscount.end);
     if (payDate >= start && payDate <= end) {
-      // Check if this payment covers the full term balance
-      const { billed, paid } = termTotals(s, term);
-      if (amount >= billed - paid) earlyDisc = earlyPayDiscount.pct || 10;
+      const pct = earlyPayDiscount.pct || 10;
+      const withEarly = termTotals(s, term, Math.min(100, getDiscountPct(disc, term) + pct));
+      if (amount >= withEarly.billed - withEarly.paid - 0.005) earlyDisc = pct;
     }
   }
+  if (earlyDisc) {
+    if (!disc.earlyPay) disc.earlyPay = {};
+    disc.earlyPay[term] = earlyDisc;
+  }
 
-  const totalDiscPct = Math.min(100, getDiscountPct(disc) + earlyDisc);
+  const totalDiscPct = Math.min(100, getDiscountPct(disc, term));
 
   let remaining = amount;
   const breakdown = [];
@@ -4046,7 +4060,7 @@ const GRADE_SORT_ORDER = ['Creche','Nursery 1','Nursery 2','KG 1','KG 2',
 function buildMiniBill(s, term, billType, month, logoB64) {
   const isJHS = s.grade.startsWith('JHS');
   const disc  = s.discounts || {};
-  const totalDiscPct = Math.min(100, getDiscountPct(disc));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc, term));
   const gradeSched   = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
 
   const today = new Date().toLocaleDateString('en-GH', { day:'2-digit', month:'short', year:'numeric' });
@@ -4741,10 +4755,10 @@ function renderStudentList() {
   }).join('');
 }
 
-function termTotals(student, term) {
+function termTotals(student, term, pctOverride) {
   const tf = student.fees[term] || {};
   const disc = student.discounts || {};
-  const totalDiscPct = Math.min(100, getDiscountPct(disc));
+  const totalDiscPct = Math.min(100, pctOverride != null ? pctOverride : getDiscountPct(disc, term));
 
   // CORM Kid → zero fees on everything
   if (student.cormKid) {
@@ -4998,9 +5012,9 @@ function renderDetail(id) {
       </div>
       <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="saveDiscounts('${id}')">✅ Save Discounts</button>
-        <span style="font-size:.8rem;color:var(--gray-3)">Current total discount: <strong>${getDiscountPct(disc)}%</strong></span>
+        <span style="font-size:.8rem;color:var(--gray-3)">Current total discount (${activeTerm}): <strong>${getDiscountPct(disc, activeTerm)}%</strong></span>
       </div>
-      <p style="font-size:.76rem;color:var(--gray-3);margin-top:.5rem">⚡ Early payment 10% discount is applied automatically at payment time when full term balance is paid within the discount window.</p>
+      <p style="font-size:.76rem;color:var(--gray-3);margin-top:.5rem">⚡ The early payment discount is added on top of this one, by itself, when the parent settles the whole term inside the window set in Settings. The amount they need to pay is the balance with both discounts already taken off.${(disc.earlyPay && Object.keys(disc.earlyPay).length) ? ' Earned so far: ' + Object.entries(disc.earlyPay).map(([t,v]) => t + ' ' + v + '%').join(', ') + '.' : ''}</p>
     </div>`;
 
   TERMS.forEach(term => {
@@ -5400,15 +5414,17 @@ function saveDiscounts(id) {
     if (name) siblings.push({ name, grade: grade || '' });
   });
 
-  s.discounts = {
+  // Keep whatever else is on the record — an earned early-payment discount, a
+  // scholarship percentage — instead of replacing the object and losing them.
+  s.discounts = Object.assign({}, s.discounts || {}, {
     multiChild10: mc10 && !mc15,
     multiChild15: mc15,
     promoCode,
     promoDiscPct: promoDisc,
     siblings
-  };
+  });
   save();
-  const total = getDiscountPct(s.discounts);
+  const total = getDiscountPct(s.discounts, activeTerm);
   toast(`✅ Discounts saved — ${total}% total applied to ${s.name}`);
   renderDetail(id);
   renderDashboard();
@@ -5421,13 +5437,28 @@ function validatePromoCode(code) {
   return codes[code.toUpperCase()] || 0;
 }
 
-function getDiscountPct(disc) {
+function getDiscountPct(disc, term) {
   if (!disc) return 0;
   const familyDisc  = disc.multiChild15 ? 15 : disc.multiChild10 ? 10 : 0;
   const promoDisc   = disc.promoDiscPct   || 0;
   const scholarPct  = disc.scholarshipPct || 0;   // "School Tuition (10% scholarship)"
-  const earlyPct    = disc.earlyPayPct    || 0;   // "School Tuition (10% for early payment)"
+  // Early payment is earned per term, when the parent settles that term inside
+  // the window set in Settings, and it is stored on the record so every bill and
+  // report keeps showing it. earlyPayPct is the older whole-year field, set by
+  // hand or carried in from a bill import, and still counts for every term.
+  const earlyTerm   = (term && disc.earlyPay && disc.earlyPay[term]) || 0;
+  const earlyPct    = (disc.earlyPayPct || 0) + earlyTerm;
   return Math.min(100, familyDisc + promoDisc + scholarPct + earlyPct);
+}
+// The parts behind the total, so a bill can name each one.
+function discountParts(disc, term) {
+  disc = disc || {};
+  return {
+    family:  disc.multiChild15 ? 15 : disc.multiChild10 ? 10 : 0,
+    early:   (disc.earlyPayPct || 0) + ((term && disc.earlyPay && disc.earlyPay[term]) || 0),
+    scholar: disc.scholarshipPct || 0,
+    promo:   disc.promoDiscPct   || 0,
+  };
 }
 
 function recordMonthlyPayment(studentId, termKey, monthIndex) {
@@ -5515,7 +5546,7 @@ function distributeAmount(s, term, amount) {
   const breakdown = [];
   let remaining = amount;
   if (!s.fees[term]) s.fees[term] = {};
-  const totalDiscPct = Math.min(100, getDiscountPct(s.discounts || {}));
+  const totalDiscPct = Math.min(100, getDiscountPct(s.discounts || {}, term));
   const isJHS = s.grade.startsWith('JHS');
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
   remaining = payArrearsFirst(s, term, remaining, breakdown);
@@ -5684,7 +5715,7 @@ function recordPayment(studentId, term, catKey) {
   if (!s.fees[term]) s.fees[term] = {};
 
   const disc = s.discounts || {};
-  const totalDiscPct = Math.min(100, getDiscountPct(disc));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc, term));
   const isJHS = s.grade.startsWith('JHS');
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[term] || {};
 
@@ -6512,7 +6543,8 @@ function openBill(studentId, term) {
   if (!s) return;
   const isJHS = s.grade.startsWith('JHS');
   const disc = s.discounts || {};
-  const totalDiscPct = Math.min(100, getDiscountPct(disc));
+  const totalDiscPct = Math.min(100, getDiscountPct(disc, term));
+  const D = discountParts(disc, term);
   const { billed, paid, discAmt } = termTotals(s, term);
   const balance = billed - paid;
   const today = new Date().toLocaleDateString('en-GH', { day:'2-digit', month:'long', year:'numeric' });
@@ -6573,9 +6605,11 @@ function openBill(studentId, term) {
     </div>
 
     <div class="bill-title">FEE STATEMENT / BILL &nbsp;—&nbsp; ${term.toUpperCase()}</div>
-    ${(disc.advancePct||0)+(disc.familyPct||0)>0 ? `<div style="text-align:center;margin-bottom:.8rem;font-size:.8rem">
-      <span style="background:#e8f5e9;color:#1a6b3a;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">⚡ Early Pay Discount: ${disc.advancePct||0}%</span>
-      <span style="background:#fff8e1;color:#b8690f;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">👨‍👩‍👧 Family Discount: ${disc.familyPct||0}%</span>
+    ${totalDiscPct > 0 ? `<div style="text-align:center;margin-bottom:.8rem;font-size:.8rem">
+      ${D.early   ? `<span style="background:#e8f5e9;color:#1a6b3a;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">⚡ Early Payment Discount: ${D.early}%</span>` : ''}
+      ${D.family  ? `<span style="background:#fff8e1;color:#b8690f;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">👨‍👩‍👧 Family Discount: ${D.family}%</span>` : ''}
+      ${D.scholar ? `<span style="background:#e3f2fd;color:#1565c0;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">🎓 Scholarship: ${D.scholar}%</span>` : ''}
+      ${D.promo   ? `<span style="background:#f3e5f5;color:#6a1b9a;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block">🏷️ Promotion: ${D.promo}%</span>` : ''}
       <span style="background:#fce8e6;color:#c0392b;border-radius:12px;padding:.2rem .8rem;margin:.2rem;display:inline-block;font-weight:700">Total Discount: ${totalDiscPct}% (−GH₵ ${discAmt.toFixed(2)})</span>
     </div>` : ''}
 
@@ -7012,7 +7046,7 @@ async function applyBillImport() {
       if (!already) {
         let remaining = e.prepayment; const breakdown = [];
         remaining = payArrearsFirst(s, term, remaining, breakdown);
-        const pct = Math.min(100, getDiscountPct(s.discounts));
+        const pct = Math.min(100, getDiscountPct(s.discounts, term));
         getPaymentOrder().filter(c => !(c.jhsOnly && !s.grade.startsWith('JHS')) && !(s.fullSponsor && c.key === 'tuition')).forEach(cat => {
           if (remaining <= 0.005) return;
           if (!s.fees[term][cat.key]) return;
