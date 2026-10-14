@@ -2899,7 +2899,7 @@ function confirmTransfer() {
   const isToJHS    = toStudent.grade.startsWith('JHS');
   const toSched    = (feeSchedule[toStudent.grade] || DEFAULT_FEE_SCHEDULE[toStudent.grade] || {})[payment.term] || {};
   const discTo     = toStudent.discounts || {};
-  const discPctTo    = Math.min(100, (discTo.advancePct||0) + (discTo.familyPct||0));
+  const discPctTo    = Math.min(100, getDiscountPct(discTo, payment.term));
 
   if (!toStudent.fees[payment.term]) toStudent.fees[payment.term] = {};
 
@@ -4872,8 +4872,10 @@ function renderDetail(id) {
     <button class="btn ${isOut ? 'btn-primary' : ''} no-print" onclick="setStudentStatus('${id}', ${isOut ? "'Active'" : "'Inactive'"})" style="float:right;margin-left:.6rem"
       title="${isOut ? 'Bring this student back onto the active roll' : 'Mark this student as withdrawn. Everything on this page is kept.'}">${isOut ? '↩️ Mark Active again' : '🚪 Mark Inactive (withdrawn)'}</button>
     <h2>👤 ${s.name}
-      ${(disc.advancePct||0)>0 ? `<span class="discount-badge" style="margin-left:.6rem">⚡ ${disc.advancePct}% Early Pay</span>` : ''}
-      ${(disc.familyPct||0)>0  ? `<span class="discount-badge family" style="margin-left:.4rem">👨‍👩‍👧 ${disc.familyPct}% Family</span>` : ''}
+      ${(() => { const D = discountParts(disc, activeTerm); return `
+      ${D.early   ? `<span class="discount-badge" style="margin-left:.6rem">⚡ ${D.early}% Early Pay</span>` : ''}
+      ${D.family  ? `<span class="discount-badge family" style="margin-left:.4rem">👨‍👩‍👧 ${D.family}% Family</span>` : ''}
+      ${D.other   ? `<span class="discount-badge" style="margin-left:.4rem;background:#e0f2f1;color:#00695c;border:1px solid #80cbc4">🤝 ${D.other}% ${D.otherReason || 'Other'}</span>` : ''}`; })()}
       ${(s.scholarship||0)>0   ? `<span class="discount-badge scholar-badge" style="margin-left:.4rem">🎓 GH₵${s.scholarship} Scholarship</span>` : ''}
       ${s.cormKid     ? `<span class="discount-badge" style="margin-left:.4rem;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7">🏠 CORM Kid</span>` : ''}
       ${s.fullSponsor ? `<span class="discount-badge" style="margin-left:.4rem;background:#fff8e1;color:#f57f17;border:1px solid #ffe082">✨ Fully Sponsored</span>` : ''}
@@ -5092,7 +5094,7 @@ function renderDetail(id) {
       <!-- EARLY PAYMENT BANNER -->
       <div class="early-pay-banner">
         ⚡ Pay the full term amount of GH₵ ${billed.toFixed(2)} within the first 10 days of the term to receive an early payment discount.
-        ${(disc.advancePct||0)>0 ? '&nbsp; <strong>This student has an early pay discount of '+disc.advancePct+'% applied.</strong>' : ''}
+        ${(() => { const e = discountParts(disc, term).early; return e ? '&nbsp; <strong>This student has an early payment discount of '+e+'% on '+term+'.</strong>' : ''; })()}
       </div>
 
       <!-- MONTHLY PAYMENT SCHEDULE — primary view -->
