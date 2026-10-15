@@ -2971,23 +2971,46 @@ function deletePayment(studentId, receiptNo) {
   const gradeSched = (feeSchedule[s.grade] || DEFAULT_FEE_SCHEDULE[s.grade] || {})[p.term] || {};
   const disc = s.discounts || {};
 
+  // How much we actually manage to put back. This used to be assumed rather
+  // than measured: a payment with no breakdown whose category did not match a
+  // fee label exactly was removed from the log and reversed by nothing at all,
+  // so the money stayed marked as paid and the receipt that proved it was gone.
+  let reversed = 0;
   if (p.breakdown && p.breakdown.length > 0) {
     p.breakdown.forEach(b => {
+      const amt = +b.amount || 0;
       if (b.key === '__arrears') {
-        if (s.arrearsPaid) s.arrearsPaid[p.term] = Math.max(0, (s.arrearsPaid[p.term] || 0) - b.amount);
+        if (s.arrearsPaid) {
+          const take = Math.min(amt, s.arrearsPaid[p.term] || 0);
+          s.arrearsPaid[p.term] = Math.max(0, (s.arrearsPaid[p.term] || 0) - take); reversed += take;
+        }
       } else if (String(b.key).startsWith('__extra:')) {
         const ex = (s.extras || []).find(x => x.id === String(b.key).slice(8));
-        if (ex) ex.paid = Math.max(0, (ex.paid || 0) - b.amount);
+        if (ex) { const take = Math.min(amt, ex.paid || 0); ex.paid = Math.max(0, (ex.paid || 0) - take); reversed += take; }
       } else if (s.fees[p.term] && s.fees[p.term][b.key] != null) {
-        s.fees[p.term][b.key].paid = Math.max(0, (s.fees[p.term][b.key].paid || 0) - b.amount);
+        const f = s.fees[p.term][b.key];
+        const take = Math.min(amt, f.paid || 0);
+        f.paid = Math.max(0, (f.paid || 0) - take); reversed += take;
       }
     });
   } else {
     const cat = FEE_CATS.find(c => c.label === p.category);
     if (cat && s.fees[p.term] && s.fees[p.term][cat.key] != null) {
-      s.fees[p.term][cat.key].paid = Math.max(0, (s.fees[p.term][cat.key].paid || 0) - p.amount);
+      const f = s.fees[p.term][cat.key];
+      const take = Math.min(p.amount, f.paid || 0);
+      f.paid = Math.max(0, (f.paid || 0) - take); reversed += take;
     }
   }
+
+  // Whatever could not be matched is taken back off the term anyway, newest
+  // lines first, so the account can never keep money whose receipt was deleted.
+  const shortfall = (p.amount || 0) - reversed;
+  let spread = null;
+  if (shortfall > 0.005) {
+    spread = reversePaidOnTerm(s, p.term, shortfall);
+    reversed += spread.reversed;
+  }
+  const stillOut = (p.amount || 0) - reversed;
 
   // Remove from log
   s.paymentLog.splice(pIdx, 1);
@@ -2995,7 +3018,13 @@ function deletePayment(studentId, receiptNo) {
   save();
   renderDetail(studentId);
   renderDashboard();
-  toast(`🗑 Payment ${receiptNo} deleted and reversed on ${s.name}'s account.`);
+  if (stillOut > 0.005) {
+    toast(`🗑 Payment ${receiptNo} deleted. GH₵ ${reversed.toFixed(2)} was put back on the bill, but GH₵ ${stillOut.toFixed(2)} could not be — nothing on ${p.term} was marked paid by it. Check the account against the receipt book.`);
+  } else if (spread) {
+    toast(`🗑 Payment ${receiptNo} deleted and GH₵ ${reversed.toFixed(2)} put back on ${s.name}'s bill (${spread.back.map(b => b.label).join(', ')}).`);
+  } else {
+    toast(`🗑 Payment ${receiptNo} deleted and reversed on ${s.name}'s account.`);
+  }
 }
 
 
@@ -5337,11 +5366,28 @@ function renderDetail(id) {
   }
 
   // ── PAYMENT LOG ──
-  const log = (s.paymentLog || []).slice().reverse();
-  const totalPaidAll = log.reduce((t,p) => t + (p.amount||0), 0);
+  // Advances and credit settle a term's bill without writing a payment entry,
+  // because the cash was counted in the term it actually came in. That is right
+  // for the cash reports, but it left this list saying "No payments recorded
+  // yet" on an account that was fully settled, so the office could not see why
+  // the balance was zero and tried to enter the money again. They are shown
+  // here now, marked as carrying no cash for this term.
+  const advLog = [];
+  Object.entries(s.advances || {}).forEach(([aTerm, arr]) => (arr || []).forEach((a, ai) => advLog.push({
+    __adv: true, __term: aTerm, __idx: ai,
+    date: a.receivedOn ? a.receivedOn + 'T09:00:00' : (a.at || new Date().toISOString()),
+    amount: a.amount || 0, method: a.method || 'cash', receiptNo: a.receiptNo || '',
+    term: aTerm, breakdown: a.breakdown || [], category: 'Advance payment',
+    noCash: !!a.alreadyBanked, fromTerm: a.fromTerm || '', carriedFrom: a.carriedFrom || '', note: a.note || ''
+  })));
+  const log = (s.paymentLog || []).concat(advLog)
+    .sort((a, b) => new Date(a.date) - new Date(b.date)).reverse();
+  const cashRows = log.filter(p => !p.__adv);
+  const totalPaidAll = cashRows.reduce((t,p) => t + (p.amount||0), 0);
+  const totalAdv     = advLog.reduce((t,p) => t + (p.amount||0), 0);
   html += `<div style="margin-top:1.2rem">
     <h3 style="font-size:1rem;color:var(--green);margin:0 0 .5rem;display:flex;align-items:center;gap:.6rem">💳 Payments
-      <span style="font-size:.78rem;font-weight:400;color:var(--gray-3)">${log.length} payment${log.length===1?'':'s'} · total GH₵ ${totalPaidAll.toFixed(2)}</span></h3>
+      <span style="font-size:.78rem;font-weight:400;color:var(--gray-3)">${cashRows.length} payment${cashRows.length===1?'':'s'} · total GH₵ ${totalPaidAll.toFixed(2)}${totalAdv>0.005?` &nbsp;·&nbsp; plus GH₵ ${totalAdv.toFixed(2)} settled from advances`:''}</span></h3>
     <div id="plog-${id}" style="margin-top:.4rem">
       ${log.length === 0
         ? `<p style="color:var(--gray-3);font-size:.84rem">No payments recorded yet.</p>`
@@ -5349,6 +5395,23 @@ function renderDetail(id) {
             <thead><tr><th>Date</th><th>Amount (GH₵)</th><th>Type</th><th>Receipt #</th><th>Term</th><th>Applied To</th><th class="no-print"></th></tr></thead>
             <tbody>
               ${log.map(p => {
+                if (p.__adv) {
+                  const bd = (p.breakdown && p.breakdown.length)
+                    ? '<div style="font-size:.78rem;line-height:1.7">' + p.breakdown.map(b => `<span style="display:flex;justify-content:space-between;gap:.8rem"><span>→ ${b.label}</span><strong>GH₵${(b.amount||0).toFixed(2)}</strong></span>`).join('') + '</div>'
+                    : `→ Advance payment <strong>GH₵${(p.amount||0).toFixed(2)}</strong>`;
+                  return `<tr style="background:#f7fbf8">
+                    <td style="white-space:nowrap">${p.date ? new Date(p.date).toLocaleDateString('en-GH',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+                    <td style="font-weight:700;white-space:nowrap">GH₵ ${(p.amount||0).toFixed(2)}</td>
+                    <td><span class="method-badge" style="background:#e8f5e9;color:#1a6b3a;border:1px solid #a5d6a7">⏩ Advance</span>
+                      ${p.noCash ? `<br><span style="font-size:.72rem;color:var(--gray-3)">no cash this term${p.fromTerm ? ' — banked in ' + p.fromTerm : ''}</span>` : ''}</td>
+                    <td>${p.receiptNo ? `<strong>${p.receiptNo}</strong>` : `<span style="font-size:.74rem;color:var(--gray-3)">receipted in ${p.fromTerm || 'the earlier term'}</span>`}</td>
+                    <td>${p.term}${p.carriedFrom ? `<br><span style="font-size:.72rem;color:var(--gray-3)">carried on from ${p.carriedFrom}</span>` : ''}</td>
+                    <td style="min-width:220px">${bd}</td>
+                    <td class="no-print" style="white-space:nowrap">${currentUser && currentUser.role === 'admin'
+                      ? `<button class="btn btn-sm" style="background:#fce8e6;color:var(--danger);border:1px solid #ef9a9a" onclick="removeAdvance('${id}','${p.__term}',${p.__idx})" title="Remove this advance and put the amount back on the bill">🗑</button>`
+                      : ''}</td>
+                  </tr>`;
+                }
                 const breakdownHtml = p.breakdown && p.breakdown.length > 0
                   ? '<div style="font-size:.78rem;line-height:1.7">' +
                     p.breakdown.map(b => `<span style="display:flex;justify-content:space-between;gap:.8rem"><span>→ ${b.label}</span><strong>GH₵${b.amount.toFixed(2)}</strong></span>`).join('') +
@@ -5597,6 +5660,30 @@ function closeDetail() {
 }
 
 // Payment priority: all non-tuition categories first, tuition last
+// Take an amount of money back off a term when the payment that put it there
+// cannot say which lines it touched. Extras first, then fee categories in the
+// reverse of the order a payment fills them, then arrears.
+function reversePaidOnTerm(s, term, amount) {
+  let left = amount; const back = [];
+  (s.extras || []).filter(e => e.term === term).forEach(e => {
+    if (left <= 0.005) return;
+    const take = Math.min(left, e.paid || 0);
+    if (take > 0.005) { e.paid = (e.paid || 0) - take; left -= take; back.push({ label: e.label || 'Extra charge', amount: take }); }
+  });
+  getPaymentOrder().slice().reverse().forEach(cat => {
+    if (left <= 0.005) return;
+    const f = s.fees && s.fees[term] && s.fees[term][cat.key];
+    if (!f) return;
+    const take = Math.min(left, f.paid || 0);
+    if (take > 0.005) { f.paid = (f.paid || 0) - take; left -= take; back.push({ label: cat.label, amount: take }); }
+  });
+  if (left > 0.005 && s.arrearsPaid && (s.arrearsPaid[term] || 0) > 0) {
+    const take = Math.min(left, s.arrearsPaid[term]);
+    s.arrearsPaid[term] -= take; left -= take; back.push({ label: 'Arrears brought forward', amount: take });
+  }
+  return { reversed: amount - left, left, back };
+}
+
 function getPaymentOrder() {
   const nonTuition = FEE_CATS.filter(c => c.key !== 'tuition');
   const tuition    = FEE_CATS.filter(c => c.key === 'tuition');
